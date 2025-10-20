@@ -20,6 +20,14 @@ export interface RenderedContext {
       from: number;
       to: number;
     };
+    // Metadata for cache control and other LLM provider features
+    metadata?: {
+      cacheControl?: {
+        type: 'ephemeral' | 'persistent';
+        ttl?: number;
+      };
+      [key: string]: any;
+    };
   }>;
   
   // Metadata about rendering
@@ -39,8 +47,40 @@ export interface HUDConfig {
   maxTokens?: number;  // Token budget for context window (e.g., 4000-8000) - currently only warns if exceeded
   includeTypes?: Array<'event' | 'state' | 'ambient'>;
   systemPrompt?: string;
+  
+  // Legacy caching fields (deprecated)
   enableCaching?: boolean;
   cacheStrategy?: 'frame-boundary' | 'token-threshold' | 'none';
+  
+  /**
+   * Frame render cache configuration (Layer 2 caching)
+   * Caches rendered frame text per context to avoid re-rendering
+   * Complements VEILStateManager's state cache (Layer 1)
+   */
+  frameRenderCache?: {
+    enabled: boolean;                // Enable render caching
+    cacheBorderDepth?: number;       // How many recent frames to NOT cache (default: 20)
+    maxContexts?: number;            // Max contexts to cache (default: 10)
+    verbose?: boolean;               // Enable verbose logging
+  };
+  
+  /**
+   * Render context configuration
+   * Determines how frames are rendered and affects cache keys
+   */
+  renderContext?: {
+    focusedStream?: string;          // Which stream is in focus (for multi-stream)
+    displayMode?: 'full' | 'focused' | 'ambient';  // Rendering mode
+  };
+  
+  /**
+   * Prompt caching configuration (Anthropic-level)
+   * Places cache markers at cacheBorderDepth boundary
+   */
+  promptCaching?: {
+    enabled: boolean;                // Enable Anthropic prompt caching
+  };
+  
   metadata?: {
     pendingActivations?: {
       count: number;

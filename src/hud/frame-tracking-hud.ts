@@ -17,9 +17,82 @@ import { CompressibleHUD, RenderedContext, HUDConfig } from './types-v2';
 import { CompressionEngine, RenderedFrame, StateDelta } from '../compression/types-v2';
 import { getGlobalTracer, TraceCategory } from '../tracing';
 import { VEILStateManager } from '../veil/veil-state';
+import { FrameRenderCache } from './frame-render-cache';
+import { RenderContext, CachedFrameRender } from './render-context-types';
 
 export class FrameTrackingHUD implements CompressibleHUD {
-  // No constructor needed - VEILStateManager accessed via Space when needed
+  private frameRenderCache: FrameRenderCache;
+  
+  constructor() {
+    this.frameRenderCache = new FrameRenderCache({
+      maxContexts: 10,
+      enableStats: true,
+      verbose: false
+    });
+  }
+  
+  /**
+   * Get cache statistics (for monitoring/debugging)
+   */
+  getCacheStats() {
+    return this.frameRenderCache.getStats();
+  }
+  
+  /**
+   * Clear the render cache
+   */
+  clearRenderCache() {
+    this.frameRenderCache.clear();
+  }
+  
+  /**
+   * Get cached context keys (for debugging)
+   */
+  getCachedContexts() {
+    return this.frameRenderCache.getContextKeys();
+  }
+  
+  /**
+   * Invalidate a specific frame across all contexts
+   */
+  invalidateFrame(frameSequence: number) {
+    this.frameRenderCache.invalidateFrame(frameSequence);
+  }
+  
+  /**
+   * Invalidate a range of frames across all contexts
+   */
+  invalidateFrameRange(fromSequence: number, toSequence: number) {
+    this.frameRenderCache.invalidateRange(fromSequence, toSequence);
+  }
+  
+  /**
+   * Build render context from config and compression state
+   */
+  private buildRenderContext(config: HUDConfig, compression?: CompressionEngine): RenderContext {
+    // Compute compression state hash
+    const compressionState = this.computeCompressionStateHash(compression);
+    
+    return {
+      focusedStream: config.renderContext?.focusedStream,
+      compressionState,
+      displayMode: config.renderContext?.displayMode || 'full',
+      extensions: {}
+    };
+  }
+  
+  /**
+   * Compute stable hash for compression state
+   */
+  private computeCompressionStateHash(compression?: CompressionEngine): string {
+    if (!compression) {
+      return 'none';
+    }
+    
+    // Simple approach: just mark as "compressed" for now
+    // Future: could hash actual compression mappings for finer granularity
+    return 'compressed';
+  }
   
   render(
     frames: Frame[],
@@ -80,9 +153,46 @@ export class FrameTrackingHUD implements CompressibleHUD {
     // If frame dropping becomes necessary, it should be done intelligently (e.g., using
     // compression, importance scoring, or keeping a sliding window of recent + important frames).
     
-    // Render each frame using centralized state retrieval
-    for (const frame of frames) {
-      // Get historical state at this frame from VEILStateManager
+    // Layer 2 cache setup (render caching)
+    const cacheEnabled = config.frameRenderCache?.enabled ?? false;
+    const cacheBorderDepth = config.frameRenderCache?.cacheBorderDepth ?? 20;
+    const cacheableUntil = Math.max(0, frames.length - cacheBorderDepth);
+    const renderContext = this.buildRenderContext(config, compression);
+    
+    // Get focused stream for rendering
+    const focusedStream = config.renderContext?.focusedStream;
+    
+    // Render each frame using centralized state retrieval (Layer 1) and render caching (Layer 2)
+    for (let i = 0; i < frames.length; i++) {
+      const frame = frames[i];
+      const isCacheable = cacheEnabled && i < cacheableUntil;
+      
+      // TRY LAYER 2 CACHE FIRST (render cache)
+      if (isCacheable) {
+        const cached = this.frameRenderCache.get(renderContext, frame.sequence);
+        if (cached) {
+          // Cache hit! Use cached render
+          if (cached.renderedContent.trim()) {
+            frameContents.push({
+              type: cached.frameType,
+              content: cached.renderedContent,
+              sequence: frame.sequence
+            });
+            totalTokens += cached.tokens;
+          }
+          
+          frameRenderings.push({
+            frameSequence: frame.sequence,
+            content: cached.renderedContent,
+            tokens: cached.tokens,
+            facetIds: cached.facetIds
+          });
+          
+          continue;  // Skip rendering - used cache
+        }
+      }
+      
+      // LAYER 2 MISS - Get state from Layer 1 (VEILStateManager)
       // This is cached and compression-aware
       const snapshot = veilStateManager.getStateAtSequence(frame.sequence, compression);
       const replayedState = snapshot.facets;
@@ -107,8 +217,21 @@ export class FrameTrackingHUD implements CompressibleHUD {
       
       const source = this.getFrameSource(frame);
 
-      const { content, facetIds } = this.renderFrameContent(frame, source, replayedState, removals);
+      const { content, facetIds } = this.renderFrameContent(frame, source, replayedState, removals, focusedStream);
       const tokens = this.estimateTokens(content);
+      
+      // CACHE IN LAYER 2 if applicable
+      if (isCacheable && content.trim()) {
+        this.frameRenderCache.set(renderContext, frame.sequence, {
+          frameSequence: frame.sequence,
+          context: renderContext,
+          renderedContent: content,
+          frameType: source,
+          tokens,
+          facetIds,
+          cachedAt: Date.now()
+        });
+      }
       
       // Trace each frame rendering
       tracer?.record({
@@ -158,7 +281,12 @@ export class FrameTrackingHUD implements CompressibleHUD {
     }
     
     // Build messages directly from frame contents
-    const { messages, frameToMessageIndex } = this.buildFrameBasedMessages(frameContents, currentFacets, config);
+    const { messages, frameToMessageIndex } = this.buildFrameBasedMessages(
+      frameContents, 
+      currentFacets, 
+      config,
+      cacheableUntil  // Pass CBD boundary for cache marker placement
+    );
     
     // Calculate total tokens from messages
     totalTokens = messages.reduce((sum, msg) => sum + this.estimateTokens(msg.content), 0);
@@ -354,13 +482,15 @@ export class FrameTrackingHUD implements CompressibleHUD {
     frame: Frame,
     source: 'user' | 'agent' | 'system',
     replayedState: Map<string, Facet>,
-    removals?: Map<string, 'hide' | 'delete'>
+    removals?: Map<string, 'hide' | 'delete'>,
+    renderMode: 'focused' | 'unfocused' = 'focused'
   ): RenderedChunk[] {
     if (source === 'agent') {
+      // Agent frames always rendered in focused mode (their own speech)
       return this.renderAgentFrameAsChunks(frame);
     }
 
-    return this.renderEnvironmentFrameAsChunks(frame, replayedState, removals);
+    return this.renderEnvironmentFrameAsChunks(frame, replayedState, removals, renderMode);
   }
   
   /**
@@ -371,9 +501,16 @@ export class FrameTrackingHUD implements CompressibleHUD {
     frame: Frame,
     source: 'user' | 'agent' | 'system',
     replayedState: Map<string, Facet>,
-    removals?: Map<string, 'hide' | 'delete'>
+    removals?: Map<string, 'hide' | 'delete'>,
+    focusedStream?: string
   ): { content: string; facetIds: string[] } {
-    const chunks = this.renderFrameAsChunks(frame, source, replayedState, removals);
+    // Determine render mode based on frame's stream vs focused stream
+    const frameStream = frame.activeStream?.streamId;
+    const renderMode = (!focusedStream || !frameStream || frameStream === focusedStream)
+      ? 'focused'
+      : 'unfocused';
+    
+    const chunks = this.renderFrameAsChunks(frame, source, replayedState, removals, renderMode);
     const content = chunks.map(c => c.content).join('');
     const facetIds = Array.from(new Set(
       chunks.flatMap(c => c.facetIds || [])
@@ -388,7 +525,8 @@ export class FrameTrackingHUD implements CompressibleHUD {
   private renderEnvironmentFrameAsChunks(
     frame: Frame,
     replayedState: Map<string, Facet>,
-    removals?: Map<string, 'hide' | 'delete'>
+    removals?: Map<string, 'hide' | 'delete'>,
+    renderMode: 'focused' | 'unfocused' = 'focused'
   ): RenderedChunk[] {
     const chunks: RenderedChunk[] = [];
     const renderedStates = new Map<string, { content: string; facetId: string; type: string }>();
@@ -419,7 +557,7 @@ export class FrameTrackingHUD implements CompressibleHUD {
           if (!facet || removals?.has(facet.id)) break;
           
           if (facet.type === 'state') {
-            const rendered = this.renderFacet(facet);
+            const rendered = this.renderFacet(facet, renderMode);
             if (rendered) {
               renderedStates.set(facet.id, { 
                 content: rendered, 
@@ -439,7 +577,7 @@ export class FrameTrackingHUD implements CompressibleHUD {
           if (!currentFacet) break;
           
           const updatedFacet = this.mergeFacetChanges(currentFacet, operation.changes);
-          const rendered = this.renderFacet(updatedFacet);
+          const rendered = this.renderFacet(updatedFacet, renderMode);
           if (rendered) {
             renderedStates.set(operation.id, { 
               content: rendered, 
@@ -476,7 +614,7 @@ export class FrameTrackingHUD implements CompressibleHUD {
           }
           
           // Render directly
-          const rendered = this.renderFacet(facet);
+          const rendered = this.renderFacet(facet, renderMode);
           if (rendered) {
             chunks.push(createRenderedChunk(
               rendered + '\n',
@@ -661,7 +799,26 @@ export class FrameTrackingHUD implements CompressibleHUD {
     return parts.join('\n');
   }
   
-  private renderFacet(facet: Facet): string | null {
+  /**
+   * Render facet in unfocused mode (structured with stream context)
+   */
+  private renderFacetUnfocused(facet: Facet, facetContent?: string): string | null {
+    if (!facetContent) return null;
+    
+    const streamId = facet.streamId || 'unknown-stream';
+    const facetType = facet.type;
+    
+    // Extract channel name from metadata if available for cleaner display
+    let streamLabel = streamId;
+    if (facet.state?.metadata?.channelName) {
+      streamLabel = `#${facet.state.metadata.channelName}`;
+    }
+    
+    // Wrap with event tag and stream attribute
+    return `<event stream="${streamId}" type="${facetType}" label="${streamLabel}">${facetContent}</event>`;
+  }
+  
+  private renderFacet(facet: Facet, renderMode: 'focused' | 'unfocused' = 'focused'): string | null {
     const tracer = getGlobalTracer();
     
     const facetContent = hasContentAspect(facet) ? facet.content : undefined;
@@ -674,6 +831,12 @@ export class FrameTrackingHUD implements CompressibleHUD {
       return null;
     }
     
+    // NEW: For unfocused mode, use structured rendering
+    if (renderMode === 'unfocused') {
+      return this.renderFacetUnfocused(facet, facetContent);
+    }
+    
+    // EXISTING: Focused mode rendering (clean colon format)
     const parts: string[] = [];
     
     // Trace facet rendering
@@ -814,10 +977,14 @@ export class FrameTrackingHUD implements CompressibleHUD {
   private buildFrameBasedMessages(
     frameContents: Array<{ type: 'user' | 'agent' | 'system' | 'compressed'; content: string; sequence: number }>,
     currentFacets: Map<string, Facet>,
-    config: HUDConfig
+    config: HUDConfig,
+    cacheableUntil: number = 0  // CBD boundary for cache marker placement
   ): { messages: RenderedContext['messages']; frameToMessageIndex: Map<number, number> } {
     const messages: RenderedContext['messages'] = [];
     const frameToMessageIndex = new Map<number, number>();
+    
+    // Determine if prompt caching is enabled
+    const promptCachingEnabled = config.promptCaching?.enabled ?? false;
     
     // Each frame becomes its own message
     for (const frame of frameContents) {
@@ -840,14 +1007,31 @@ export class FrameTrackingHUD implements CompressibleHUD {
       const messageIndex = messages.length;
       frameToMessageIndex.set(frame.sequence, messageIndex);
       
-      messages.push({
+      // Determine if this message should have a cache marker
+      // Place marker at CBD boundary (last cacheable frame)
+      const shouldCache = promptCachingEnabled && 
+                          cacheableUntil > 0 && 
+                          frame.sequence === cacheableUntil - 1;
+      
+      // Build message with optional cache control
+      const message: any = {
         role,
         content: frame.content,
         sourceFrames: {
           from: frame.sequence,
           to: frame.sequence
         }
-      });
+      };
+      
+      if (shouldCache) {
+        message.metadata = {
+          cacheControl: {
+            type: 'ephemeral' as const
+          }
+        };
+      }
+      
+      messages.push(message);
     }
     
     // Add floating ambient and state content as system context
