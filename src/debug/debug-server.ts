@@ -733,11 +733,18 @@ export class DebugServer {
         res.status(404).json({ error: 'frame not found' });
         return;
       }
-      const facetsSnapshot = this.buildFacetSnapshot(frame.sequence);
+      
+      // Get VEIL state as it existed at this frame sequence
+      const veilSnapshot = this.veilState.getStateAtSequence(frame.sequence);
+      const facets = Array.from(veilSnapshot.facets.values());
+      
       res.json({
         ...frame,
-        facetsTree: facetsSnapshot.facets,
-        facetsSequence: facetsSnapshot.sequence
+        veilState: {
+          facets: facets.map(f => sanitizeFacetTreeNode(f)),
+          sequence: veilSnapshot.sequence,
+          facetCount: facets.length
+        }
       });
     });
 

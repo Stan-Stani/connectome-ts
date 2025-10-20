@@ -16,18 +16,22 @@ import {
 import { CompressibleHUD, RenderedContext, HUDConfig } from './types-v2';
 import { CompressionEngine, RenderedFrame, StateDelta } from '../compression/types-v2';
 import { getGlobalTracer, TraceCategory } from '../tracing';
+import { VEILStateManager } from '../veil/veil-state';
 
 export class FrameTrackingHUD implements CompressibleHUD {
+  // No constructor needed - VEILStateManager accessed via Space when needed
   
   render(
     frames: Frame[],
     currentFacets: Map<string, Facet>,
+    veilStateManager: VEILStateManager,
     compression?: CompressionEngine,
     config: HUDConfig = {}
   ): RenderedContext {
     const { context } = this.renderWithFrameTracking(
       frames,
       currentFacets,
+      veilStateManager,
       compression,
       config
     );
@@ -37,6 +41,7 @@ export class FrameTrackingHUD implements CompressibleHUD {
   renderWithFrameTracking(
     frames: Frame[],
     currentFacets: Map<string, Facet>,
+    veilStateManager: VEILStateManager,
     compression?: CompressionEngine,
     config: HUDConfig = {}
   ): {
@@ -75,22 +80,18 @@ export class FrameTrackingHUD implements CompressibleHUD {
     // If frame dropping becomes necessary, it should be done intelligently (e.g., using
     // compression, importance scoring, or keeping a sliding window of recent + important frames).
     
-    // Track state as we replay operations - start with empty state
-    const replayedState = new Map<string, Facet>();
-    const removals = new Map<string, 'hide' | 'delete'>();
-    
-    // Render each frame
+    // Render each frame using centralized state retrieval
     for (const frame of frames) {
+      // Get historical state at this frame from VEILStateManager
+      // This is cached and compression-aware
+      const snapshot = veilStateManager.getStateAtSequence(frame.sequence, compression);
+      const replayedState = snapshot.facets;
+      const removals = snapshot.removals;
+      
       // Check if this frame is compressed
       if (compression?.shouldReplaceFrame(frame.sequence)) {
         const replacement = compression.getReplacement(frame.sequence);
         if (replacement !== null) {
-          // Apply state delta if present
-          const stateDelta = compression.getStateDelta(frame.sequence);
-          if (stateDelta) {
-            this.applyStateDelta(stateDelta, replayedState);
-          }
-          
           // Add replacement even if it's empty string (for compressed frames)
           if (replacement) {
             frameContents.push({
@@ -959,24 +960,6 @@ export class FrameTrackingHUD implements CompressibleHUD {
     return name.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
   }
   
-  private applyStateDelta(delta: StateDelta, replayedState: Map<string, Facet>): void {
-    // Handle deletions first
-    for (const deletedId of delta.deleted) {
-      replayedState.delete(deletedId);
-    }
-    
-    // Apply changes to existing facets
-    for (const [facetId, changes] of delta.changes) {
-      const existing = replayedState.get(facetId);
-      if (existing) {
-        const updated = this.mergeFacetChanges(existing, changes);
-        replayedState.set(facetId, updated);
-      }
-    }
-    
-    // Note: New facets in delta.added would need full facet data,
-    // which would be included in delta.changes with their full state
-  }
 
   private cloneFacet(facet: Facet): Facet {
     const cloned = { ...facet } as Facet;

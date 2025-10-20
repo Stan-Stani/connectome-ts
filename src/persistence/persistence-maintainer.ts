@@ -57,11 +57,29 @@ export class PersistenceMaintainer extends BaseMaintainer {
   }
   
   private async saveDelta(frame: Frame, sequence: number): Promise<void> {
+    // Create a minimal frame representation for delta storage
+    // We only need deltas, sequence, and timestamp - not events or transition data
+    const minimalFrame: Frame = {
+      sequence: frame.sequence,
+      timestamp: frame.timestamp,
+      uuid: frame.uuid,
+      events: [],  // Events not needed for replay
+      deltas: frame.deltas,
+      transition: {
+        sequence: frame.transition.sequence,
+        timestamp: frame.transition.timestamp,
+        elementOps: [],  // Element ops tracked separately
+        componentOps: [],
+        componentChanges: [],
+        veilOps: []
+      }
+    };
+    
     const delta: FrameDelta = {
       sequence,
       timestamp: frame.timestamp,
       lifecycleId: this.space.lifecycleId,  // Tag with current lifecycle
-      frame,
+      frame: minimalFrame,
       elementOperations: [...this.elementOperations]
     };
     
@@ -73,22 +91,17 @@ export class PersistenceMaintainer extends BaseMaintainer {
     // Get the full state
     const state = this.veilState.getState();
     
-    // Serialize element tree if we have access to space
-    let elementTree;
-    if (this.space) {
-      elementTree = serializeElement(this.space);
-    } else {
-      // Fallback to empty tree
-      elementTree = {
-        id: 'root',
-        name: 'root',
-        type: 'Space',
-        active: true,
-        subscriptions: [],
-        components: [],
-        children: []
-      };
-    }
+    // Element tree is now fully stored in element-tree facets within VEIL
+    // No need for separate elementTree serialization
+    const elementTree = {
+      id: this.space.id,
+      name: 'root',
+      type: 'Space',
+      active: true,
+      subscriptions: [],
+      components: [],
+      children: []
+    };
     
     // Create snapshot
     const snapshot: PersistenceSnapshot = {
@@ -98,7 +111,7 @@ export class PersistenceMaintainer extends BaseMaintainer {
       lifecycleId: this.space.lifecycleId,  // Tag with current lifecycle
       spaceId: this.space.id,                // Stable Space ID
       veilState: serializeVEILState(state),
-      elementTree,
+      elementTree, // Minimal - only for backward compatibility
       metadata: {
         facetCount: state.facets.size,
         streamCount: state.streams.size,

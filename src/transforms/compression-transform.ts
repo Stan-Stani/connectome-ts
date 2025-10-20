@@ -17,6 +17,7 @@ import { Facet, VEILDelta } from '../veil/types';
 import { FrameTrackingHUD } from '../hud/frame-tracking-hud';
 import { CompressionEngine, CompressibleRange, CompressionConfig, RenderedFrame, StateDelta } from '../compression/types-v2';
 import { extractFrameRange } from '../hud/frame-extraction';
+import { VEILStateManager } from '../veil/veil-state';
 
 interface CompressionTransformOptions {
   engine: CompressionEngine;
@@ -154,9 +155,18 @@ export class CompressionTransform extends BaseTransform {
     // Fallback: re-render (for backwards compatibility or if snapshots missing)
     console.log(`[CompressionTransform] Snapshots not available, re-rendering ${frameHistory.length} frames`);
     
+    // Get VEILStateManager from Space
+    const space = this.element?.findSpace() as any;
+    if (!space?.getVEILStateManager) {
+      console.error('[CompressionTransform] Cannot get VEILStateManager from Space');
+      return [];
+    }
+    const veilStateManager = space.getVEILStateManager();
+    
     const { frameRenderings } = this.hud.renderWithFrameTracking(
       [...frameHistory],
       new Map(state.facets),
+      veilStateManager,
       undefined,
       {
         maxTokens: this.options.compressionConfig.maxTokens,

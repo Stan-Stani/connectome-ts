@@ -505,29 +505,38 @@ export function updateStateFacets(
   baseId: string,
   updates: Record<string, any>,
   currentState?: any
-): Facet[] {
-  const facets: Facet[] = [];
+): any[] {
+  const deltas: any[] = [];
   
   for (const [key, newValue] of Object.entries(updates)) {
     const facetId = `${baseId}-${key}`;
     
-    // Get old value if state provided
-    const oldFacet = currentState?.facets?.get(facetId);
-    const oldValue = oldFacet?.state?.value;
+    // Check if facet exists
+    const existingFacet = currentState?.facets?.get(facetId);
     
-    // Create state-change facet
-    facets.push({
-      id: `state-update-${facetId}-${Date.now()}`,
-      type: 'state-change',
-      targetFacetIds: [facetId],
-      state: {
+    if (existingFacet) {
+      // Rewrite existing state facet
+      deltas.push({
+        type: 'rewriteFacet',
+        id: facetId,
         changes: {
-          value: { old: oldValue, new: newValue }
+          state: { value: newValue }
         }
-      },
-      ephemeral: true
-    });
+      });
+    } else {
+      // Create new state facet (persistent, no content = not rendered)
+      // This is simpler than the state-change → internal-state flow
+      deltas.push({
+        type: 'addFacet',
+        facet: {
+          id: facetId,
+          type: 'state',
+          // No content - internal tracking state, not conversational content
+          state: { value: newValue }
+        }
+      });
+    }
   }
   
-  return facets;
+  return deltas;
 }

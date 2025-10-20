@@ -24,9 +24,21 @@ export function registerComponent(typeName: string) {
 export class ElementRequestReceptor extends BaseReceptor {
   topics = ['element:create', 'element:destroy', 'component:add', 'component:remove'];
   
+  // Track element-tree facets being created/updated in this receptor call
+  // Note: This persists across multiple transform() calls within the same Phase 1
+  private elementTreeCache = new Map<string, any>();
+  private lastFrameSequence = -1;
+  
   transform(event: SpaceEvent, state: ReadonlyVEILState): VEILDelta[] {
+    // Clear cache on new frame
+    if (state.currentSequence !== this.lastFrameSequence) {
+      this.elementTreeCache.clear();
+      this.lastFrameSequence = state.currentSequence;
+    }
+    
     console.log(`[ElementRequestReceptor] Processing ${event.topic} event`);
     const facets: Facet[] = [];
+    const deltas: VEILDelta[] = [];
     
     switch (event.topic) {
       case 'element:create': {
@@ -76,32 +88,102 @@ export class ElementRequestReceptor extends BaseReceptor {
           componentClass?: string;
           config?: any;
         };
-        const facet = createEventFacet({
-          content: `Request to add component '${payload.componentType}' to element '${payload.elementId}'`,
+        
+        const { elementId, componentType, config } = payload;
+        const treeFacetId = `element-tree-${elementId}`;
+        
+        // Check cache first, then state
+        let treeFacet = this.elementTreeCache.get(treeFacetId);
+        if (!treeFacet) {
+          treeFacet = state.facets.get(treeFacetId);
+        }
+        
+        if (treeFacet?.state || treeFacet?.components !== undefined) {
+          // Element-tree facet exists (in state or cache), update it
+          const existingComponents = treeFacet.state?.components || treeFacet.components || [];
+          
+          // Check if component already exists (idempotency)
+          const alreadyExists = existingComponents.some((c: any) => 
+            c.type === componentType && 
+            JSON.stringify(c.config) === JSON.stringify(config)
+          );
+          
+          if (!alreadyExists) {
+            // Add component to the list
+            const components = [...existingComponents, {
+              type: componentType,
+              index: existingComponents.length,
+              config
+            }];
+            
+            // Update cache
+            this.elementTreeCache.set(treeFacetId, {
+              ...(treeFacet.state || treeFacet),
+              components
+            });
+            
+            // Directly emit rewriteFacet delta to update element-tree
+            deltas.push({
+              type: 'rewriteFacet',
+              id: treeFacetId,
+              changes: { state: { components } }
+            });
+          }
+        } else {
+          // Create new element-tree facet
+          const newTreeFacet = {
+            elementId,
+            elementType: 'Space',  // Assume Space for root
+            parentId: elementId === 'root' ? null : 'root',
+            name: elementId,
+            active: true,
+            components: [{
+              type: componentType,
+              index: 0,
+              config
+            }]
+          };
+          
+          // Cache it
+          this.elementTreeCache.set(treeFacetId, newTreeFacet);
+          
+          // Create the facet via delta
+          deltas.push({
+            type: 'addFacet',
+            facet: {
+              id: treeFacetId,
+              type: 'element-tree',
+              state: newTreeFacet
+            }
+          });
+        }
+        
+        // Also create an event facet for history
+        facets.push(createEventFacet({
+          content: `Add component '${componentType}' to element '${elementId}'`,
           source: 'element-tree',
-          eventType: 'component-add-request',
+          eventType: 'component-add',
           metadata: payload,
           streamId: 'system'
-        });
-        // Mark as ephemeral - processed once then removed
-        (facet as any).ephemeral = true;
-        facets.push(facet);
+        }));
         break;
       }
     }
     
-    return wrapFacetsAsDeltas(facets);
+    // Return both the event facets (for history) and the element-tree deltas
+    return [...wrapFacetsAsDeltas(facets), ...deltas];
   }
 }
 
 /**
- * Transform: Maintains element tree state facets
+ * Transform: Handles element lifecycle state updates
+ * Currently only marks elements as inactive on unmount
  */
 export class ElementTreeTransform extends BaseTransform {
   process(state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
     
-    // Find element events that need to update tree facets
+    // Mark element-tree facets as inactive when elements unmount
     for (const [id, facet] of state.facets) {
       if (facet.type === 'event' && facet.state?.eventType === 'element-unmount') {
         const elementId = facet.state.metadata?.elementId;
@@ -111,25 +193,6 @@ export class ElementTreeTransform extends BaseTransform {
           if (treeFacet?.state?.active) {
             deltas.push(rewriteFacet(treeFacetId, {
               state: { active: false }
-            }));
-          }
-        }
-      }
-      
-      if (facet.type === 'event' && facet.state?.eventType === 'component-add') {
-        const { elementId, componentType, config } = facet.state.metadata || {};
-        if (elementId && componentType) {
-          const treeFacetId = `element-tree-${elementId}`;
-          const treeFacet = state.facets.get(treeFacetId);
-          if (treeFacet?.state) {
-            const components = [...(treeFacet.state.components || [])];
-            components.push({
-              type: componentType,
-              index: components.length,
-            config
-            });
-            deltas.push(rewriteFacet(treeFacetId, {
-              state: { components }
             }));
           }
         }
@@ -206,7 +269,7 @@ export class ElementTreeMaintainer extends BaseMaintainer {
       }
       
       // Look for component add requests
-      if (facet.type === 'event' && facet.state?.eventType === 'component-add-request') {
+      if (facet.type === 'event' && facet.state?.eventType === 'component-add') {
         this.pendingOperations.push({
           type: 'add-component',
           facet
@@ -517,10 +580,33 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     if (!elementId || !componentType) return;
     
     const element = this.elementCache.get(elementId);
-    if (!element) return;
+    if (!element) {
+      console.warn(`[ElementTreeMaintainer] Element ${elementId} not found for component ${componentType}`);
+      return;
+    }
     
-    const component = ComponentRegistry.create(componentType, config);
-    if (!component) return;
+    // Check if component already exists on element (idempotency)
+    const alreadyExists = element.components.some((c: any) => 
+      c.constructor.name === componentType
+    );
+    
+    if (alreadyExists) {
+      console.log(`[ElementTreeMaintainer] Component ${componentType} already exists on element ${elementId}, skipping`);
+      return;
+    }
+    
+    const component = ComponentRegistry.create(componentType);
+    if (!component) {
+      console.warn(`[ElementTreeMaintainer] Failed to create component ${componentType}`);
+      return;
+    }
+    
+    // Apply config properties to component
+    if (config) {
+      Object.assign(component, config);
+    }
+    
+    console.log(`[ElementTreeMaintainer] Creating component ${componentType} for element ${elementId}`);
     
     // Generate component ID before adding (so we know the index)
     const componentIndex = element.components.length;
@@ -569,33 +655,6 @@ export class ElementTreeMaintainer extends BaseMaintainer {
       case 'afferent':
         // Afferents are attached to elements but don't register with Space
         break;
-    }
-    
-    // Update element-tree facet
-    const treeFacetId = `element-tree-${elementId}`;
-    const treeFacet = state.facets.get(treeFacetId);
-    if (treeFacet?.state) {
-      const components = [...(treeFacet.state.components || [])];
-      components.push({
-        type: componentType,
-        index: componentIndex,
-        config
-      });
-      
-      events.push({
-        topic: 'veil:operation',
-        source: element.getRef(),
-        timestamp: Date.now(),
-        payload: {
-          operation: {
-            type: 'rewriteFacet',
-            id: treeFacetId,
-            changes: {
-              state: { components }
-            }
-          }
-        }
-      });
     }
   }
   

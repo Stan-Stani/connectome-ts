@@ -63,12 +63,14 @@ export interface HUD {
    * Render VEIL state to LLM context
    * @param frames - The VEIL frame history
    * @param currentFacets - Current state of all facets
+   * @param veilStateManager - VEILStateManager for historical state queries
    * @param compression - Optional compression engine
    * @param config - Rendering configuration
    */
   render(
     frames: Frame[],
     currentFacets: Map<string, Facet>,
+    veilStateManager: any, // VEILStateManager (any to avoid circular deps)
     compression?: CompressionEngine,
     config?: HUDConfig
   ): RenderedContext;
@@ -98,6 +100,7 @@ export interface CompressibleHUD extends HUD {
   renderWithFrameTracking(
     frames: Frame[],
     currentFacets: Map<string, Facet>,
+    veilStateManager: any, // VEILStateManager (any to avoid circular deps)
     compression?: CompressionEngine,
     config?: HUDConfig
   ): {

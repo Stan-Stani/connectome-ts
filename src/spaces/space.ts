@@ -140,6 +140,13 @@ export class Space extends Element {
   }
   
   /**
+   * Get VEILStateManager - public accessor for components
+   */
+  getVEILStateManager(): VEILStateManager {
+    return this.veilState;
+  }
+  
+  /**
    * Generate a new lifecycle ID for this Space instance
    */
   private generateLifecycleId(): string {
@@ -452,9 +459,6 @@ export class Space extends Element {
       // Receptors return deltas directly (can add, rewrite, or remove facets)
       const phase1Deltas = this.runPhase1(processedEvents);
       const phase1Changes = this.veilState.applyDeltasDirect(phase1Deltas);
-      
-      // Add Phase 1 deltas to currentFrame so they're visible during Phase 2
-      this.currentFrame.deltas.push(...phase1Deltas);
       
       // PHASE 2: VEIL → VEIL (via Transforms)
       // Now handled entirely within runPhase2 with priority groups

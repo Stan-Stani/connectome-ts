@@ -14,11 +14,24 @@ import { isForkInvariant } from '../spaces/types';
 import { getPersistenceMetadata } from '../persistence/decorators';
 
 /**
+ * Snapshot of VEIL state at a specific sequence
+ */
+export interface VEILStateSnapshot {
+  sequence: number;
+  facets: Map<string, Facet>;
+  removals: Map<string, 'hide' | 'delete'>;
+}
+
+/**
  * Manages the current VEIL state by applying frame deltas
  */
 export class VEILStateManager {
   private state: VEILState;
   private listeners: Array<(state: VEILState) => void> = [];
+  
+  // Cache for historical state snapshots (for efficient time-travel queries)
+  private historicalStateCache: Map<number, VEILStateSnapshot> = new Map();
+  private readonly maxCachedSnapshots = 10;
 
   constructor() {
     this.state = {
@@ -215,11 +228,17 @@ export class VEILStateManager {
         }
         
         // Process state-change facets to update cache
+        // This may create new internal-state facets, which we need to track
+        let delta: FacetDelta = { type: 'added', facet: cloned };
+        
         if (cloned.type === 'state-change' && (cloned as any).targetFacetIds) {
-          this.applyStateChangesToCache(cloned as any);
+          const newFacetDeltas = this.applyStateChangesToCache(cloned as any);
+          // Note: newFacetDeltas are returned but caller needs to handle them
+          // For now, we return the state-change delta, new facets are side effects
+          // TODO: Return multiple deltas or queue new facets for next frame
         }
         
-        return { type: 'added', facet: cloned };
+        return delta;
       }
       case 'rewriteFacet': { // Exotemporal: rewrite existing facet
         const existing = this.state.facets.get(operation.id);
@@ -329,11 +348,13 @@ export class VEILStateManager {
   /**
    * Apply state-change facet to cache
    * Handles both existing facets and creates new cache entries for missing facets
+   * Returns deltas for any newly created internal-state facets
    */
-  private applyStateChangesToCache(stateChangeFacet: any): void {
+  private applyStateChangesToCache(stateChangeFacet: any): FacetDelta[] {
     const { targetFacetIds, state: changeState } = stateChangeFacet;
+    const newFacetDeltas: FacetDelta[] = [];
     
-    if (!targetFacetIds || !changeState?.changes) return;
+    if (!targetFacetIds || !changeState?.changes) return newFacetDeltas;
     
     for (const targetId of targetFacetIds) {
       // Get or create cached state
@@ -359,13 +380,19 @@ export class VEILStateManager {
       // If target facet doesn't exist, create it
       // This enables "update-or-create" semantics
       if (!targetFacet) {
-        this.state.facets.set(targetId, {
+        const newFacet = {
           id: targetId,
           type: 'internal-state',
           state: cachedState
-        });
+        };
+        this.state.facets.set(targetId, newFacet);
+        
+        // Return delta so it gets tracked and persisted
+        newFacetDeltas.push({ type: 'added', facet: newFacet });
       }
     }
+    
+    return newFacetDeltas;
   }
 
   /**
@@ -415,6 +442,129 @@ export class VEILStateManager {
       removals: new Map(this.state.removals),
       currentStateCache: new Map(this.state.currentStateCache)
     };
+  }
+
+  /**
+   * Get VEIL state as it existed at a specific frame sequence
+   * This is the single source of truth for historical state queries
+   * Cached for efficiency - repeated queries are O(1) after first call
+   * 
+   * @param targetSequence - The frame sequence to get state for (1-indexed)
+   * @param compressionEngine - Optional compression engine for state delta shortcuts
+   * @returns Snapshot of facets and removals at that sequence
+   */
+  getStateAtSequence(targetSequence: number, compressionEngine?: any): VEILStateSnapshot {
+    // If requesting current state, return live state
+    if (targetSequence === this.state.currentSequence) {
+      return {
+        sequence: targetSequence,
+        facets: new Map(this.state.facets),
+        removals: new Map(this.state.removals)
+      };
+    }
+    
+    // Allow querying currentSequence + 1 (for in-progress frames during Phase 2)
+    // In this case, we return current state (frame hasn't been finalized yet)
+    if (targetSequence === this.state.currentSequence + 1) {
+      return {
+        sequence: targetSequence,
+        facets: new Map(this.state.facets),
+        removals: new Map(this.state.removals)
+      };
+    }
+    
+    // Validate sequence
+    if (targetSequence < 0 || targetSequence > this.state.currentSequence + 1) {
+      throw new Error(`Invalid sequence ${targetSequence}. Current: ${this.state.currentSequence}`);
+    }
+    
+    // Check cache
+    if (this.historicalStateCache.has(targetSequence)) {
+      return this.historicalStateCache.get(targetSequence)!;
+    }
+    
+    // Find nearest cached snapshot before target
+    const cachedSequences = Array.from(this.historicalStateCache.keys())
+      .filter(seq => seq < targetSequence)
+      .sort((a, b) => b - a); // Descending - nearest first
+    
+    let facets: Map<string, Facet>;
+    let removals: Map<string, 'hide' | 'delete'>;
+    let startFrom: number;
+    
+    if (cachedSequences.length > 0) {
+      // Start from cached snapshot
+      const nearestSeq = cachedSequences[0];
+      const snapshot = this.historicalStateCache.get(nearestSeq)!;
+      facets = new Map(snapshot.facets);
+      removals = new Map(snapshot.removals);
+      startFrom = nearestSeq + 1;
+    } else {
+      // Start from empty
+      facets = new Map();
+      removals = new Map();
+      startFrom = 1;
+    }
+    
+    // Get frames to replay
+    const framesToReplay = this.state.frameHistory.filter(
+      f => f.sequence >= startFrom && f.sequence <= targetSequence
+    );
+    
+    // Replay frames, using compression shortcuts when available
+    for (const frame of framesToReplay) {
+      // Check if this frame is part of a compressed range
+      if (compressionEngine?.shouldReplaceFrame(frame.sequence)) {
+        const stateDelta = compressionEngine.getStateDelta(frame.sequence);
+        
+        if (stateDelta) {
+          // Fast-forward using compression's state delta
+          // Handle deletions
+          for (const deletedId of stateDelta.deleted) {
+            facets.delete(deletedId);
+            removals.set(deletedId, 'delete');
+          }
+          
+          // Apply changes
+          for (const [facetId, changes] of stateDelta.changes) {
+            const existing = facets.get(facetId);
+            if (existing) {
+              const updated = this.mergeFacetChanges(existing, changes);
+              facets.set(facetId, updated);
+            }
+          }
+          
+          // Skip frames that return empty replacement (not first in range)
+          const replacement = compressionEngine.getReplacement(frame.sequence);
+          if (replacement === '') {
+            continue; // Skip this frame
+          }
+        }
+      }
+      
+      // Apply frame deltas normally
+      for (const delta of frame.deltas) {
+        this.applyDeltaToSnapshot(delta, facets, removals);
+      }
+    }
+    
+    // Cache the result
+    const snapshot: VEILStateSnapshot = {
+      sequence: targetSequence,
+      facets,
+      removals
+    };
+    
+    this.historicalStateCache.set(targetSequence, snapshot);
+    
+    // Evict old cache entries (LRU - keep last N)
+    if (this.historicalStateCache.size > this.maxCachedSnapshots) {
+      const oldest = Array.from(this.historicalStateCache.keys())
+        .sort((a, b) => a - b)[0];
+      this.historicalStateCache.delete(oldest);
+    }
+    
+    return snapshot;
   }
 
   /**
@@ -573,6 +723,72 @@ export class VEILStateManager {
     for (const listener of this.listeners) {
       listener(state);
     }
+  }
+  
+  /**
+   * Apply a single delta to a snapshot (used for historical replay)
+   * This is lighter-weight than the full applyDelta which updates listeners, etc.
+   */
+  private applyDeltaToSnapshot(
+    operation: VEILOperation,
+    facets: Map<string, Facet>,
+    removals: Map<string, 'hide' | 'delete'>
+  ): void {
+    switch (operation.type) {
+      case 'addFacet': {
+        const cloned = this.cloneFacet(operation.facet);
+        facets.set(cloned.id, cloned);
+        break;
+      }
+      
+      case 'rewriteFacet': {
+        const existing = facets.get(operation.id);
+        if (existing && operation.changes) {
+          const updated = this.mergeFacetChanges(existing, operation.changes);
+          facets.set(operation.id, updated);
+        }
+        break;
+      }
+      
+      case 'removeFacet': {
+        facets.delete(operation.id);
+        removals.set(operation.id, 'delete');
+        break;
+      }
+    }
+  }
+  
+  /**
+   * Merge changes into a facet (helper for both live and snapshot replay)
+   */
+  private mergeFacetChanges(existing: Facet, changes: Partial<Facet>): Facet {
+    const updated = { ...existing };
+    
+    // Handle content
+    if ('content' in changes && changes.content !== undefined) {
+      (updated as any).content = changes.content;
+    }
+    
+    // Handle state (deep merge)
+    if ('state' in changes && changes.state) {
+      const previousState = this.isPlainObject((updated as any).state)
+        ? (updated as any).state
+        : {};
+      (updated as any).state = this.deepMergeObjects(
+        previousState,
+        changes.state as Record<string, any>
+      );
+    }
+    
+    // Handle other fields
+    for (const [key, value] of Object.entries(changes)) {
+      if (key === 'state' || key === 'content' || value === undefined) {
+        continue;
+      }
+      (updated as any)[key] = value;
+    }
+    
+    return updated;
   }
 
   /**

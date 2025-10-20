@@ -14,19 +14,24 @@ import { CompressionEngine } from '../compression/types-v2';
 import { HUDConfig } from './types-v2';
 import { VEILStateManager } from '../veil/veil-state';
 
+export interface ContextTransformConfig {
+  compressionEngine?: CompressionEngine;
+  defaultOptions?: Partial<HUDConfig>;
+}
+
 export class ContextTransform extends BaseTransform {
   // Priority: Run after compression (which has priority 10)
   // TODO [constraint-solver]: Replace with requires = ['compressed-frames']
   priority = 100;
   
   private hud: FrameTrackingHUD;
+  private compressionEngine?: CompressionEngine;
+  private defaultOptions?: Partial<HUDConfig>;
   
-  constructor(
-    private readonly veilStateManager: VEILStateManager,
-    private compressionEngine?: CompressionEngine,
-    private defaultOptions?: Partial<HUDConfig>
-  ) {
+  constructor(config: ContextTransformConfig = {}) {
     super();
+    this.compressionEngine = config.compressionEngine;
+    this.defaultOptions = config.defaultOptions;
     this.hud = new FrameTrackingHUD();
   }
   
@@ -49,20 +54,28 @@ export class ContextTransform extends BaseTransform {
         // Get agent-specific options from activation
         const agentOptions = this.buildAgentOptions(activationState);
         
+        // Get VEILStateManager from Space
+        const space = this.element?.findSpace() as any;
+        if (!space || !space.getVEILStateManager) {
+          console.error('[ContextTransform] Cannot access VEILStateManager - element not attached to Space');
+          continue;
+        }
+        
+        const veilStateManager = space.getVEILStateManager();
+        
         // Render context using the existing HUD logic
-        const fullState = this.veilStateManager.getState();
+        const fullState = veilStateManager.getState();
         
         // Get current frame from Space to include in rendering
         // This is critical: during Phase 2, the current frame hasn't been finalized
         // to frameHistory yet, so we need to explicitly include it
-        const space = this.element?.findSpace() as any;
         const currentFrame = space?.getCurrentFrame();
         
         // Combine frameHistory with current frame so agent sees everything
         const allFrames = [...fullState.frameHistory];
         if (currentFrame) {
           // Only add if not already in history (avoid duplicates)
-          const isAlreadyInHistory = fullState.frameHistory.some(f => f.sequence === currentFrame.sequence);
+          const isAlreadyInHistory = fullState.frameHistory.some((f: any) => f.sequence === currentFrame.sequence);
           if (!isAlreadyInHistory) {
             allFrames.push(currentFrame);
           }
@@ -71,6 +84,7 @@ export class ContextTransform extends BaseTransform {
         const context = this.hud.render(
           allFrames,
           fullState.facets,
+          veilStateManager,
           this.compressionEngine,
           agentOptions
         );

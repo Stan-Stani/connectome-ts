@@ -268,7 +268,12 @@ export class FileStorageAdapter implements StorageAdapter {
       const files = await readdir(this.deltaDir);
       const deltaFiles = files
         .filter(f => f.startsWith('delta-') && f.endsWith('.json'))
-        .sort();
+        .sort((a, b) => {
+          // Sort by numeric sequence, not alphabetically
+          const seqA = parseInt(a.match(/delta-(\d+)\.json/)?.[1] || '0');
+          const seqB = parseInt(b.match(/delta-(\d+)\.json/)?.[1] || '0');
+          return seqA - seqB;
+        });
       
       const deltas: FrameDelta[] = [];
       

@@ -608,6 +608,7 @@ export class BasicAgent implements AgentInterface {
     return this.hud.render(
       state.frameHistory,
       new Map(state.facets),
+      this.veilStateManager,
       undefined, // No compression - use RETM transforms for compression support
       {
         systemPrompt: this.config.systemPrompt,

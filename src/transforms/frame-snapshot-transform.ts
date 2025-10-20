@@ -13,6 +13,7 @@ import { BaseTransform } from '../components/base-martem';
 import { ReadonlyVEILState } from '../spaces/receptor-effector-types';
 import { VEILDelta } from '../veil/types';
 import { FrameTrackingHUD } from '../hud/frame-tracking-hud';
+import { VEILStateManager } from '../veil/veil-state';
 
 export interface FrameSnapshotTransformOptions {
   /**
@@ -42,6 +43,7 @@ export class FrameSnapshotTransform extends BaseTransform {
   
   constructor(options: FrameSnapshotTransformOptions = {}) {
     super();
+    
     this.hud = options.hud || new FrameTrackingHUD();
     this.captureEnabled = options.enabled !== false;  // Default: true
     this.verbose = options.verbose || false;

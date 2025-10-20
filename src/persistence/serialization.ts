@@ -29,6 +29,7 @@ export function serializeComponent(component: Component): SerializedComponent | 
       const value = (component as any)[propDef.propertyKey];
       if (value !== undefined) {
         try {
+          console.log(`[Serialization]   Serializing property ${propDef.propertyKey} (type: ${typeof value}, constructor: ${value?.constructor?.name})`);
           properties[propDef.propertyKey] = serializeValue(value);
         } catch (error) {
           console.warn(`Failed to serialize property ${propDef.propertyKey} on ${componentClass.name}:`, error);
@@ -138,7 +139,8 @@ export function serializeValue(value: any): SerializableValue {
     if (typeof value.toJSON === 'function') {
       return serializeValue(value.toJSON());
     }
-    console.warn(`Cannot serialize object of type ${value.constructor.name}, using toString()`);
+    // Log the call stack to see where this is being called from
+    console.warn(`Cannot serialize object of type ${value.constructor.name}, using toString(). Stack:`, new Error().stack?.split('\n').slice(2, 5).join('\n'));
     return value.toString();
   }
   

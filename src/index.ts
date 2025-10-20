@@ -3,7 +3,7 @@ import './core-components';
 
 // VEIL exports
 export * from './veil/types';
-export { VEILStateManager } from './veil/veil-state';
+export { VEILStateManager, VEILStateSnapshot } from './veil/veil-state';
 
 // Memory System exports - temporarily removed during cleanup
 

@@ -208,6 +208,10 @@ export class ConnectomeHost {
     this.referenceRegistry.set('space', space);
     this.referenceRegistry.set('veilState', veilState);
     
+    // Initialize core Element Tree infrastructure BEFORE app.initialize()
+    // This ensures element:create and component:add events can be handled
+    await this.initializeElementTreeInfrastructure(space);
+    
     await app.initialize(space, veilState);
     await this.resolveAllReferences(space);
     return { space, veilState };
@@ -224,22 +228,30 @@ export class ConnectomeHost {
     this.referenceRegistry.set('space', space);
     this.referenceRegistry.set('veilState', veilState);
     
+    // Register components with ComponentRegistry BEFORE restoration
+    // This ensures components can be created from element-tree facets
+    app.getComponentRegistry();
+    
+    // Enter restoration mode BEFORE any component initialization
+    // This prevents frames from being created during setup
+    space.setRestorationMode(true);
+    
+    // Restore VEIL state from snapshot (includes element-tree facets)
+    await restoreVEILState(veilState, snapshot.veilState);
+    
+    // NOW initialize Element Tree infrastructure (after VEIL is restored)
+    // This won't create frames because we're in restoration mode
+    await this.initializeElementTreeInfrastructure(space);
+    
     // Set up dynamic component handler BEFORE restoring elements
     // This ensures it's ready to handle events from AxonLoader
     this.setupDynamicComponentHandler(space);
     
-    // Enter restoration mode - suppress event processing
-    space.setRestorationMode(true);
-    
-    // Restore VEIL state from snapshot
-    await restoreVEILState(veilState, snapshot.veilState);
-    
-    // Restore elements and components from snapshot
-    const registry = app.getComponentRegistry();
-    await restoreElementTree(space, snapshot.elementTree);
+    // Elements are now restored from element-tree facets in VEIL, not from elementTree
+    // (Old elementTree serialization is kept minimal for backward compatibility only)
     
     const afterTreeState = veilState.getState();
-    console.log(`[Host] After element tree restore: currentSeq=${afterTreeState.currentSequence}, frameCount=${afterTreeState.frameHistory.length}`);
+    console.log(`[Host] After VEIL restore: currentSeq=${afterTreeState.currentSequence}, frameCount=${afterTreeState.frameHistory.length}`);
     
     // Check state immediately before persistence check
     const beforePersistCheck = veilState.getState();
@@ -334,6 +346,27 @@ export class ConnectomeHost {
       // Re-throw the error to prevent falling back to fresh application
       throw error;
     }
+  }
+  
+  /**
+   * Initialize core Element Tree infrastructure
+   * Handles declarative element and component creation via events
+   */
+  private async initializeElementTreeInfrastructure(space: Space): Promise<void> {
+    const { ElementRequestReceptor, ElementTreeTransform, ElementTreeMaintainer } = 
+      await import('../spaces/element-tree-receptors');
+    
+    // Mount infrastructure components
+    const receptor = new ElementRequestReceptor();
+    const transform = new ElementTreeTransform();
+    const maintainer = new ElementTreeMaintainer(space);
+    
+    // Mount them to Space
+    await space.addComponentAsync(receptor);
+    await space.addComponentAsync(transform);
+    await space.addComponentAsync(maintainer);
+    
+    console.log('🔧 Element Tree infrastructure initialized');
   }
   
   /**
@@ -626,11 +659,18 @@ export class ConnectomeHost {
     
     // Create elements from facets
     for (const facet of elementFacets) {
-      const { elementId, name, parentId } = facet.state;
+      const { elementId, name, parentId, components } = facet.state;
       
-      // Skip if already exists (from snapshot elementTree)
+      // Skip root (Space itself)
       if (elementCache.has(elementId)) {
-        console.log(`[Host] Element ${elementId} already exists, skipping reconstruction`);
+        console.log(`[Host] Element ${elementId} is Space root, skipping`);
+        // But restore components for root
+        if (elementId === 'root' || elementId === space.id) {
+          const rootElement = elementCache.get(elementId);
+          if (components && components.length > 0) {
+            await this.restoreComponentsForElement(rootElement, components);
+          }
+        }
         continue;
       }
       
@@ -646,7 +686,41 @@ export class ConnectomeHost {
       elementCache.set(elementId, element);
       parent.addChild(element);
       
-      console.log(`[Host] Reconstructed element: ${name} (${elementId})`);
+      console.log(`[Host] Reconstructed element: ${name} (${elementId}) with ${components?.length || 0} components`);
+      
+      // Restore components from element-tree facet
+      if (components && components.length > 0) {
+        await this.restoreComponentsForElement(element, components);
+      }
+    }
+  }
+  
+  /**
+   * Restore components for an element from element-tree facet data
+   */
+  private async restoreComponentsForElement(element: any, components: any[]): Promise<void> {
+    const { ComponentRegistry } = await import('../persistence/component-registry');
+    
+    for (const compDef of components) {
+      const { type, config } = compDef;
+      
+      // Create component using registry (no-args constructor)
+      const component = ComponentRegistry.create(type);
+      
+      if (!component) {
+        console.warn(`[Host] Failed to create component ${type} for element ${element.id}`);
+        continue;
+      }
+      
+      // Apply config properties to component
+      if (config) {
+        Object.assign(component, config);
+      }
+      
+      // Add component (this will trigger onInit, onRestore, and queue onMount)
+      await element.addComponentAsync(component, true); // true = isRestoring
+      
+      console.log(`[Host]   Restored component: ${type}`);
     }
   }
 }

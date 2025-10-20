@@ -25,6 +25,7 @@ import {
 } from '../veil/types';
 import { SpaceEvent } from '../spaces/types';
 import { AgentInterface, AgentState, AgentCommand } from './types';
+import { AgentComponent } from './agent-component';
 import { LLMProvider } from '../llm/llm-interface';
 import { getGlobalTracer, TraceStorage } from '../tracing';
 import { RenderedContext } from '../hud/types-v2';
@@ -37,24 +38,49 @@ export class AgentEffector extends BaseEffector {
     { type: 'rendered-context' }
   ];
   
-  private agent: AgentInterface;
+  private agent?: AgentInterface;
   private processingActivations = new Set<string>();
   private tracer?: TraceStorage;
   private cachedAgentId?: string;
   
-  constructor(
-    element: Element,
-    agent: AgentInterface
-  ) {
-    super();
-    this.element = element;
-    this.agent = agent;
+  async onMount(): Promise<void> {
     this.tracer = getGlobalTracer();
+    
+    // Get agent from element (injected via config.agentElementId)
+    const space = this.element?.findSpace();
+    const config = (this as any).config || {};
+    const agentElementId = config.agentElementId;
+    
+    if (agentElementId && space) {
+      const agentElement = space.children.find(c => c.id === agentElementId);
+      if (agentElement) {
+        const agentComponent = agentElement.getComponents(AgentComponent)[0];
+        this.agent = (agentComponent as any)?.agent;
+      }
+    }
+    
+    if (!this.agent) {
+      console.warn('[AgentEffector] Agent not found, will try by name');
+      const agentElement = space?.children.find(c => c.name === 'discord-agent');
+      if (agentElement) {
+        const agentComponent = agentElement.getComponents(AgentComponent)[0];
+        this.agent = (agentComponent as any)?.agent;
+      }
+    }
+    
+    if (!this.agent) {
+      throw new Error('[AgentEffector] Cannot find agent - check agentElementId in config');
+    }
   }
   
   async process(changes: FacetDelta[], state: ReadonlyVEILState): Promise<EffectorResult> {
     const events: SpaceEvent[] = [];
     const externalActions: ExternalAction[] = [];
+    
+    // Skip if agent not initialized yet
+    if (!this.agent) {
+      return { events, externalActions };
+    }
     
     // Check for new activations that have rendered contexts
     for (const change of changes) {
@@ -212,6 +238,12 @@ export class AgentEffector extends BaseEffector {
   ): Promise<{ facets: Facet[] }> {
     const facets: Facet[] = [];
     
+    // Guard against missing agent
+    if (!this.agent) {
+      console.error('[AgentEffector] Agent not available for runCycle');
+      return { facets: [] };
+    }
+    
     // Run the agent's cycle with the full context
     const outgoingFrame = await this.agent.runCycle(context, streamRef);
     
@@ -280,10 +312,15 @@ export class AgentEffector extends BaseEffector {
   
   // Handle agent commands via facets
   handleCommand(command: AgentCommand): void {
-    this.agent.handleCommand(command);
+    if (this.agent) {
+      this.agent.handleCommand(command);
+    }
   }
   
   getState(): AgentState {
+    if (!this.agent) {
+      return { sleeping: false, ignoringSources: new Set(), attentionThreshold: 0 };
+    }
     return this.agent.getState();
   }
 }
