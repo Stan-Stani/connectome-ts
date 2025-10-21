@@ -35,6 +35,7 @@ import {
   FacetDelta,
   EffectorResult
 } from '../src/spaces/receptor-effector-types';
+import { BaseReceptor, BaseTransform, BaseEffector } from '../src/components/base-martem';
 import { SpaceEvent } from '../src/spaces/types';
 import { Facet, VEILDelta } from '../src/veil/types';
 import {
@@ -78,11 +79,8 @@ interface DiscordConnection {
 /**
  * DiscordSlashReceptor: Handle Discord slash command interactions
  */
-class DiscordSlashReceptor implements Receptor {
+class DiscordSlashReceptor extends BaseReceptor {
   topics = ['discord:slash-command'];
-
-  async mount() {}
-  async unmount() {}
 
   transform(event: SpaceEvent, state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
@@ -158,11 +156,8 @@ class DiscordSlashReceptor implements Receptor {
 /**
  * DiscordButtonReceptor: Handle Discord button click interactions
  */
-class DiscordButtonReceptor implements Receptor {
+class DiscordButtonReceptor extends BaseReceptor {
   topics = ['discord:button-click'];
-
-  async mount() {}
-  async unmount() {}
 
   transform(event: SpaceEvent, state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
@@ -194,11 +189,8 @@ class DiscordButtonReceptor implements Receptor {
 /**
  * DiscordMessageReceptor: Handle regular Discord messages and activate agent
  */
-class DiscordMessageReceptor implements Receptor {
+class DiscordMessageReceptor extends BaseReceptor {
   topics = ['discord:message'];
-
-  async mount() {}
-  async unmount() {}
 
   transform(event: SpaceEvent, state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
@@ -245,11 +237,8 @@ class DiscordMessageReceptor implements Receptor {
 /**
  * AgentGameActionReceptor: Handle agent tool use for game actions
  */
-class AgentGameActionReceptor implements Receptor {
+class AgentGameActionReceptor extends BaseReceptor {
   topics = ['agent:game-action'];
-
-  async mount() {}
-  async unmount() {}
 
   transform(event: SpaceEvent, state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
@@ -291,11 +280,8 @@ class AgentGameActionReceptor implements Receptor {
 /**
  * BoxGameReceptor: Handle game events (box created/opened/errors)
  */
-class BoxGameReceptor implements Receptor {
+class BoxGameReceptor extends BaseReceptor {
   topics = ['game:box-created', 'game:box-opened', 'game:box-not-found', 'game:box-already-open'];
-
-  async mount() {}
-  async unmount() {}
 
   transform(event: SpaceEvent, state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
@@ -378,10 +364,7 @@ class BoxGameReceptor implements Receptor {
 /**
  * DiscordStatusTransform: Generate Discord embeds showing game status
  */
-class DiscordStatusTransform implements Transform {
-  async mount() {}
-  async unmount() {}
-
+class DiscordStatusTransform extends BaseTransform {
   process(state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
 
@@ -447,10 +430,7 @@ class DiscordStatusTransform implements Transform {
 /**
  * AgentContextTransform: Generate context for agent (for HUD/LLM)
  */
-class AgentContextTransform implements Transform {
-  async mount() {}
-  async unmount() {}
-
+class AgentContextTransform extends BaseTransform {
   process(state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
 
@@ -541,13 +521,12 @@ class AgentContextTransform implements Transform {
 /**
  * AgentSpeechToDiscordTransform: Route agent speech to Discord and create send actions
  */
-class AgentSpeechToDiscordTransform implements Transform {
+class AgentSpeechToDiscordTransform extends BaseTransform {
   private processedSpeech = new Set<string>();
 
-  constructor(private defaultChannelId: string) {}
-
-  async mount() {}
-  async unmount() {}
+  constructor(private defaultChannelId: string) {
+    super();
+  }
 
   process(state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
@@ -594,13 +573,10 @@ class AgentSpeechToDiscordTransform implements Transform {
 /**
  * AgentActivationTransform: Create agent activations for interesting events
  */
-class AgentActivationTransform implements Transform {
+class AgentActivationTransform extends BaseTransform {
   private processedEvents = new Set<string>();
   private lastActivationTime = 0;
   private readonly ACTIVATION_COOLDOWN_MS = 2000;
-
-  async mount() {}
-  async unmount() {}
 
   process(state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
@@ -686,13 +662,10 @@ class AgentActivationTransform implements Transform {
  * BoxGameEffector: Game world simulation with internal state
  * Processes both game-action facets (from users/Discord) and action facets (from agent tools)
  */
-class BoxGameEffector implements Effector {
+class BoxGameEffector extends BaseEffector {
   facetFilters = [{ type: 'game-action' }, { type: 'action' }];
 
   private boxes = new Map<string, BoxState>();
-
-  async mount() {}
-  async unmount() {}
 
   async process(changes: FacetDelta[]): Promise<EffectorResult> {
     const events: SpaceEvent[] = [];
@@ -795,12 +768,7 @@ class BoxGameEffector implements Effector {
  * - action facets with discord:* commands → invokes afferent methods
  * - game-action/event facets → sends interaction replies
  */
-class DiscordAfferentEffector implements Effector {
-  constructor(
-    private discordElement: Element,
-    private channelId: string
-  ) {}
-
+class DiscordAfferentEffector extends BaseEffector {
   facetFilters = [
     { type: 'action' },
     { type: 'game-action' },
@@ -808,8 +776,12 @@ class DiscordAfferentEffector implements Effector {
     { type: 'event' }
   ];
 
-  async mount() {}
-  async unmount() {}
+  constructor(
+    private discordElement: Element,
+    private channelId: string
+  ) {
+    super();
+  }
 
   private getAfferent(): any {
     // Get the afferent component from the discord element
@@ -1097,11 +1069,8 @@ async function runDiscordBoxGame() {
   space.addChild(discordElement);
 
   // Receptor to initialize Discord when AXON module loads
-  class DiscordInitReceptor implements Receptor {
+  class DiscordInitReceptor extends BaseReceptor {
     topics = ['axon:module-loaded'];
-
-    async mount() {}
-    async unmount() {}
 
     transform(event: SpaceEvent, state: ReadonlyVEILState): VEILDelta[] {
       const payload = event.payload as any;
@@ -1125,12 +1094,9 @@ async function runDiscordBoxGame() {
   }
 
   // Create a receptor to wait for Discord connection
-  class DiscordConnectionReceptor implements Receptor {
+  class DiscordConnectionReceptor extends BaseReceptor {
     topics = ['discord:connected'];
     private resolver?: () => void;
-
-    async mount() {}
-    async unmount() {}
 
     transform(event: SpaceEvent, state: ReadonlyVEILState): VEILDelta[] {
       console.log('✅ Discord connected!\n');
@@ -1156,10 +1122,10 @@ async function runDiscordBoxGame() {
   }
 
   const initReceptor = new DiscordInitReceptor();
-  space.addReceptor(initReceptor);
+  gameElement.addComponent(initReceptor);
 
   const connectionReceptor = new DiscordConnectionReceptor();
-  space.addReceptor(connectionReceptor);
+  gameElement.addComponent(connectionReceptor);
 
   // Connect to Discord AXON server with discord-afferent module
   const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || "";
@@ -1174,22 +1140,22 @@ async function runDiscordBoxGame() {
   console.log('🔧 Setting up RETM architecture...');
 
   // Receptors
-  space.addReceptor(new DiscordSlashReceptor());
-  space.addReceptor(new DiscordButtonReceptor());
-  space.addReceptor(new DiscordMessageReceptor()); // Handle regular Discord messages
-  space.addReceptor(new AgentGameActionReceptor()); // Handle agent tool use for creating/opening boxes
-  space.addReceptor(new BoxGameReceptor());
+  gameElement.addComponent(new DiscordSlashReceptor());
+  gameElement.addComponent(new DiscordButtonReceptor());
+  gameElement.addComponent(new DiscordMessageReceptor()); // Handle regular Discord messages
+  gameElement.addComponent(new AgentGameActionReceptor()); // Handle agent tool use for creating/opening boxes
+  gameElement.addComponent(new BoxGameReceptor());
 
   // Transforms
-  space.addTransform(new DiscordStatusTransform());
-  space.addTransform(new AgentContextTransform());
-  space.addTransform(new AgentActivationTransform());
-  space.addTransform(new AgentSpeechToDiscordTransform(CHANNEL_ID)); // Route agent speech to Discord and create send actions
-  space.addTransform(new ContextTransform(veilState));
+  gameElement.addComponent(new DiscordStatusTransform());
+  gameElement.addComponent(new AgentContextTransform());
+  gameElement.addComponent(new AgentActivationTransform());
+  gameElement.addComponent(new AgentSpeechToDiscordTransform(CHANNEL_ID)); // Route agent speech to Discord and create send actions
+  gameElement.addComponent(new ContextTransform());
 
   // Effectors
-  space.addEffector(new BoxGameEffector());
-  space.addEffector(new DiscordAfferentEffector(discordElement, CHANNEL_ID)); // Sends typing indicators and controls discord-afferent
+  gameElement.addComponent(new BoxGameEffector());
+  gameElement.addComponent(new DiscordAfferentEffector(discordElement, CHANNEL_ID)); // Sends typing indicators and controls discord-afferent
 
   // Create AI agent
   console.log('🤖 Creating AI agent...');
@@ -1200,8 +1166,9 @@ async function runDiscordBoxGame() {
   space.addChild(agentElement);
 
   // Add agent effector
-  const agentEffector = new AgentEffector(agentElement, agent);
-  space.addEffector(agentEffector);
+  const agentEffector = new AgentEffector();
+  (agentEffector as any).config = { agentElementId: agentElement.id };
+  gameElement.addComponent(agentEffector);
 
   // Add tool instructions as ambient facet for agent
   await space.emit({
