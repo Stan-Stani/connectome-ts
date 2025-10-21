@@ -383,23 +383,22 @@ Most external events are batchable, although not all. In this case they cause up
 - Fixed frame.events for proper turn attribution
 - Element.active property for mount state
 - ComponentRequestFacet for facet-driven component creation
-
-### Still Pending
-
 - Component State Management (proposed):
   - ComponentStateFacet implementation
   - Direct VEIL writes for effectors/maintainers
   - Afferent state bridge for async updates
   - Migration from @persistent decorator
+- Support for deletion and editing of Discord messages
+
+### Still Pending
 - Additional adapters (filesystem, shell terminal, etc.)
 - Discovery mechanism for @element.? syntax
 - Enhanced block parameter parsing (proper grammar/parser)
 - Lazy loading for frames to avoid memory issues
 - Reorganize persistence for long contexts
 - Typing notifications for Discord
-- Support for deletion and editing of Discord messages
-- Resource facets
-- Content markup language to reference facets
+- Resource facets for binaries
+- Content markup language to reference facets (for binaries)
 - Custom LLM provider settings communication
 - LLM provider prompt caching support
 - Meta-facets for scope/stream/agent changes

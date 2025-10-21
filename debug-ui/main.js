@@ -1055,15 +1055,20 @@ const App = {
           facetsSequence: payload.facetsSequence
         });
 
-        const facetsTree = payload.facetsTree || [];
+        // Use new veilState structure (historical state at this frame)
+        const veilState = payload.veilState || {};
+        const facetsTree = veilState.facets || [];
+        const sequence = veilState.sequence ?? null;
+        
         frameDetailCache.set(uuid, {
           facetsTree,
-          sequence: payload.facetsSequence ?? null
+          sequence
         });
         debugLog('fetchFrameDetail response', {
           uuid,
           requestId,
           facetsCount: facetsTree.length,
+          veilSequence: sequence,
           frameLoadSequence,
           selectedFrameId: state.selectedFrameId
         });
@@ -1072,7 +1077,7 @@ const App = {
 
         if (requestId === frameLoadSequence && state.selectedFrameId === uuid) {
           state.frameFacets = cloneFacetsTree(facetsTree);
-          state.frameFacetsSequence = payload.facetsSequence ?? null;
+          state.frameFacetsSequence = sequence;
           debugLog('fetchFrameDetail applied to state', {
             uuid,
             facetsCount: facetsTree.length,
@@ -1531,9 +1536,9 @@ const App = {
       if (!selectedFrame.value) return;
       state.activeDetail = {
         type: 'veil-snapshot',
-        title: `VEIL Snapshot - Frame ${selectedFrame.value.sequence}`,
+        title: `VEIL State @ Frame ${selectedFrame.value.sequence}`,
         data: {
-          sequence: selectedFrame.value.facetsSequence,
+          sequence: state.frameFacetsSequence,
           facets: state.frameFacets,
           totalFacets: state.frameFacets.length
         }
@@ -2012,10 +2017,12 @@ const App = {
           <div class="sidebar-splitter" @mousedown="startSidebarPanelResize"></div>
           <section class="panel veil-panel">
             <div class="panel-header">
-              <h2>VEIL Snapshot</h2>
+              <h2>VEIL State</h2>
               <div class="header-badges">
-                <span class="badge" v-if="state.frameFacetsSequence != null">seq {{ state.frameFacetsSequence }}</span>
-                <span class="badge" v-else-if="state.frameFacets.length">{{ state.frameFacets.length }}</span>
+                <span class="badge" v-if="state.frameFacetsSequence != null" title="Historical state as of frame sequence">
+                  📸 @ seq {{ state.frameFacetsSequence }}
+                </span>
+                <span class="badge" v-else-if="state.frameFacets.length">{{ state.frameFacets.length }} facets</span>
                 <button class="button button--small" @click="toggleVeilView" v-if="state.frameFacets.length" :title="state.veilViewMode === 'original' ? 'Switch to Turn View' : 'Switch to Original Order'">
                   {{ state.veilViewMode === 'original' ? '🔄' : '⏰' }}
                 </button>
@@ -2025,6 +2032,9 @@ const App = {
               </div>
             </div>
             <div class="veil-tree" v-if="state.frameFacets.length">
+              <div style="padding: 8px; background: #1a1a2e; border-bottom: 1px solid #0f3460; font-size: 0.85em; color: #888;">
+                💡 Showing VEIL state as it existed at frame {{ state.frameFacetsSequence }}
+              </div>
               <template v-if="state.veilViewMode === 'original'">
                 <facet-tree
                   :facets="state.frameFacets"
@@ -2238,7 +2248,9 @@ const App = {
                   <span class="meta-pill">UUID: {{ shorten(selectedFrame.uuid, 18) }}</span>
                   <span class="meta-pill">{{ formatTimestamp(selectedFrame.timestamp) }}</span>
                   <span class="meta-pill kind" :class="selectedFrame.kind">{{ selectedFrame.kind }}</span>
-                  <span class="meta-pill" v-if="state.frameFacetsSequence != null">VEIL seq {{ state.frameFacetsSequence }}</span>
+                  <span class="meta-pill" v-if="state.frameFacetsSequence != null" title="VEIL state as of this frame sequence">
+                    📸 VEIL @ seq {{ state.frameFacetsSequence }}
+                  </span>
                   <span
                     class="meta-pill"
                     v-if="selectedFrame.activeStream"
