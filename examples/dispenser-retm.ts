@@ -600,7 +600,8 @@ Be playful and creative in your responses.`
     });
     
     space.addEffector(new AgentEffector(agentElem, agent));
-    space.addTransform(new ContextTransform(veilState));
+    const contextTransform = new ContextTransform({});
+    await contextTransform.mount(space);
     
     console.log('✅ Box Dispenser initialized\n');
     console.log('Commands:');
