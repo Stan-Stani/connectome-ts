@@ -1,6 +1,6 @@
-# Compression in RETM Architecture
+# Compression in MARTEM Architecture
 
-This guide shows how to use the compression system with the new RETM (Receptor/Effector/Transform/Maintainer) architecture.
+This guide shows how to use the compression system with the MARTEM (Modulator/Afferent/Receptor/Transform/Effector/Maintainer) architecture.
 
 ## Overview
 
@@ -10,12 +10,15 @@ Compression in Connectome is now handled by **Transforms** that run during Phase
 
 ```
 Frame Processing:
+Phase 0: Event Preprocessing (Modulators) - filter, batch, dedupe events
+Async:   External Systems (Afferents) - Discord, WebSocket, console input
 Phase 1: Events → VEIL (Receptors)
 Phase 2: VEIL → VEIL (Transforms)
   ├── CompressionTransform: Compresses old frames, updates engine cache
   └── ContextTransform: Renders context for agents (using compressed frames)
 Phase 3: VEIL Changes → Side Effects (Effectors)
   └── AgentEffector: Runs agent with pre-rendered context
+Phase 4: System Maintenance (Maintainers) - persistence, cleanup
 ```
 
 ## Setup
@@ -93,7 +96,7 @@ const agent = new BasicAgent(
   veilState
 );
 
-// Use AgentEffector to connect agent to RETM architecture
+// Use AgentEffector to connect agent to MARTEM architecture
 const agentEffector = new AgentEffector(agentElement, agent);
 space.addEffector(agentEffector);
 ```
@@ -223,7 +226,7 @@ const agent = new BasicAgent(
 );
 ```
 
-### After (RETM Transforms)
+### After (MARTEM Transforms)
 
 ```typescript
 // New way - transforms handle compression
@@ -272,13 +275,14 @@ Compression creates facets that you can observe:
 }
 ```
 
-## Benefits of RETM Compression
+## Benefits of MARTEM Compression
 
 1. **Separation of Concerns**: Agents don't manage compression
 2. **Reusability**: One compression engine serves all agents
 3. **Consistency**: All agents get same compression behavior
 4. **Observability**: Compression facets show what's happening
 5. **Testability**: Can test compression independently of agents
+6. **Phase Isolation**: Compression runs in Phase 2, independent of external I/O
 
 ## Running the Example
 
