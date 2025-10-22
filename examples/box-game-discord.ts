@@ -288,7 +288,8 @@ class BoxGameReceptor extends BaseReceptor {
 
     if (event.topic === 'game:box-created') {
       const payload = event.payload as any;
-      deltas.push(addFacet(createStateFacet({
+      console.log(`[BoxGameReceptor] Creating box facet for ${payload.boxId} with contents:`, payload.contents);
+      const boxFacet = createStateFacet({
         id: `box-${payload.boxId}`,
         content: `📦 Box ${payload.boxId}: ${payload.contents.join(', ')} (created by ${payload.creator})`,
         entityType: 'component',
@@ -300,7 +301,9 @@ class BoxGameReceptor extends BaseReceptor {
           isOpen: false,
           createdAt: Date.now()
         } as BoxState
-      })));
+      });
+      console.log(`[BoxGameReceptor] Box facet created:`, JSON.stringify(boxFacet));
+      deltas.push(addFacet(boxFacet));
       deltas.push(addFacet(createEventFacet({
         id: `box-created-event-${payload.boxId}`,
         content: `${payload.creator} created box ${payload.boxId} with ${payload.contents.length} items`,
@@ -369,15 +372,21 @@ class DiscordStatusTransform extends BaseTransform {
     const deltas: VEILDelta[] = [];
 
     // Get boxes
-    const boxes = state.getFacetsByType('state')
+    const allStateFacets = state.getFacetsByType('state');
+    console.log(`[DiscordStatusTransform] Total state facets: ${allStateFacets.length}`);
+
+    const boxes = allStateFacets
       .filter(f => {
         const isContextScope = f.scopes?.some((s: string) =>
           s === 'user-rendered-context' || s === 'agent-rendered-context' || s === 'discord-rendered-context'
         );
         const isActualBox = f.state && 'boxId' in f.state && 'creator' in f.state && 'contents' in f.state;
+        console.log(`[DiscordStatusTransform] Facet ${f.id}: isActualBox=${isActualBox}, isContextScope=${isContextScope}, scopes=${JSON.stringify(f.scopes)}`);
         return isActualBox && !isContextScope;
       })
       .map(f => f.state as BoxState);
+
+    console.log(`[DiscordStatusTransform] Found ${boxes.length} boxes:`, JSON.stringify(boxes));
 
     // Get recent events
     const events = state.getFacetsByType('event')
@@ -828,8 +837,13 @@ class DiscordAfferentEffector extends BaseEffector {
             f.id === 'discord-game-status'
           );
 
+          console.log(`[/box-status] discord-game-status facet found:`, statusFacet ? 'YES' : 'NO');
+          console.log(`[/box-status] discord-game-status data:`, JSON.stringify(statusFacet?.state));
+
           const embedData = statusFacet?.state || { boxes: [], events: [], stats: {} };
           const { boxes = [], events: gameEvents = [], stats = {} } = embedData;
+
+          console.log(`[/box-status] Sending embed with ${boxes.length} boxes, ${gameEvents.length} events`);
 
           // Build embed
           const embed = {
@@ -1183,12 +1197,12 @@ async function runDiscordBoxGame() {
           scopes: ['agent-rendered-context'],
           content: `<tool_instructions>
 Available Actions:
-- @box.create("item1,item2,item3") - Create a box with items
-- @box.open("boxId") - Open an existing box
+- {@box.create("item1,item2,item3")} - Create a box with items
+- {@box.open("boxId")} - Open an existing box
 
 Examples:
-"Let me create that! @box.create("stars,magic,dreams")"
-"I'll open it! @box.open("box1234567890")"
+"Let me create that! {@box.create("stars,magic,dreams")}"
+"I'll open it! {@box.open("box1234567890")}"
 </tool_instructions>`
         }
       }
