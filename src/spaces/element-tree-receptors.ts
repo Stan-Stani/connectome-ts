@@ -631,31 +631,10 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     });
     
     // Now add component to element
+    // Note: addComponent() triggers component._attach() which auto-registers
+    // RETM components (receptors, transforms, effectors, maintainers) with Space.
+    // No need for manual registration here!
     element.addComponent(component);
-    
-    // Register RETM component with Space based on its class
-    const space = this.space as any;
-    
-    switch (componentClass) {
-      case 'modulator':
-        if (space.addModulator) space.addModulator(component);
-        break;
-      case 'receptor':
-        if (space.addReceptor) space.addReceptor(component);
-        break;
-      case 'transform':
-        if (space.addTransform) space.addTransform(component);
-        break;
-      case 'effector':
-        if (space.addEffector) space.addEffector(component);
-        break;
-      case 'maintainer':
-        if (space.addMaintainer) space.addMaintainer(component);
-        break;
-      case 'afferent':
-        // Afferents are attached to elements but don't register with Space
-        break;
-    }
   }
   
   // Helper methods for sorting
