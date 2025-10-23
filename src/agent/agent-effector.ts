@@ -45,38 +45,47 @@ export class AgentEffector extends BaseEffector {
   
   async onMount(): Promise<void> {
     this.tracer = getGlobalTracer();
-    
+    // Agent lookup is lazy - happens in process() when first needed
+  }
+
+  private findAgent(): void {
+    if (this.agent) return; // Already found
+
     // Get agent from element (injected via config.agentElementId)
     const space = this.element?.findSpace();
     const config = (this as any).config || {};
     const agentElementId = config.agentElementId;
-    
+
     if (agentElementId && space) {
       const agentElement = space.children.find(c => c.id === agentElementId);
       if (agentElement) {
         const agentComponent = agentElement.getComponents(AgentComponent)[0];
         this.agent = (agentComponent as any)?.agent;
+        if (this.agent) {
+          console.log(`[AgentEffector] Found agent in element ${agentElementId}`);
+        }
       }
     }
-    
+
     if (!this.agent) {
-      console.warn('[AgentEffector] Agent not found, will try by name');
-      const agentElement = space?.children.find(c => c.name === 'discord-agent');
+      const agentElement = space?.children.find(c => c.name === 'agent');
       if (agentElement) {
         const agentComponent = agentElement.getComponents(AgentComponent)[0];
         this.agent = (agentComponent as any)?.agent;
+        if (this.agent) {
+          console.log(`[AgentEffector] Found agent in element with name 'agent'`);
+        }
       }
-    }
-    
-    if (!this.agent) {
-      throw new Error('[AgentEffector] Cannot find agent - check agentElementId in config');
     }
   }
   
   async process(changes: FacetDelta[], state: ReadonlyVEILState): Promise<EffectorResult> {
     const events: SpaceEvent[] = [];
     const externalActions: ExternalAction[] = [];
-    
+
+    // Lazy agent lookup - find it the first time we need it
+    this.findAgent();
+
     // Skip if agent not initialized yet
     if (!this.agent) {
       return { events, externalActions };
