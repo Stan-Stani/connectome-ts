@@ -637,6 +637,46 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     // RETM components (receptors, transforms, effectors, maintainers) with Space.
     // No need for manual registration here!
     element.addComponent(component);
+
+    // Update the element-tree facet to include this component
+    const treeFacetId = `element-tree-${elementId}`;
+    const treeFacet = state.facets.get(treeFacetId);
+
+    if (treeFacet && treeFacet.state) {
+      const currentComponents = (treeFacet.state as any).components || [];
+      const updatedComponents = [
+        ...currentComponents,
+        {
+          type: componentType,
+          index: componentIndex,
+          config: config || {}
+        }
+      ];
+
+      const treeDelta = {
+        type: 'rewriteFacet' as const,
+        id: treeFacetId,
+        changes: {
+          state: {
+            ...(treeFacet.state as any),
+            components: updatedComponents
+          }
+        }
+      };
+
+      // Apply immediately so it's in the snapshot
+      const space = this.space as any;
+      if (space.getVEILState) {
+        space.getVEILState().applyDeltasDirect([treeDelta]);
+      }
+
+      // Also add to deltas for tracking
+      deltas.push(treeDelta);
+
+      console.log(`[ElementTreeMaintainer] Updated element-tree facet for ${elementId} with component ${componentType}`);
+    } else {
+      console.warn(`[ElementTreeMaintainer] element-tree facet not found for ${elementId}, component won't be persisted`);
+    }
   }
   
   // Helper methods for sorting
