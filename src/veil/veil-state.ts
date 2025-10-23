@@ -218,26 +218,34 @@ export class VEILStateManager {
       case 'addFacet': {
         // Validate facet structure
         this.validateFacetStructure(operation.facet);
-        
+
         const cloned = this.cloneFacet(operation.facet);
         this.state.facets.set(cloned.id, cloned);
-        
+
         // Update cache for state facets (clone to avoid shared references)
         if (cloned.type === 'state' && 'state' in cloned) {
           this.state.currentStateCache.set(cloned.id, JSON.parse(JSON.stringify(cloned.state)));
         }
-        
+
+        // Update agents registry for agent-registry facets
+        if (cloned.type === 'agent-registry' && 'state' in cloned) {
+          const agentState = (cloned as any).state;
+          if (agentState.agentId && agentState.agentInfo) {
+            this.state.agents.set(agentState.agentId, agentState.agentInfo);
+          }
+        }
+
         // Process state-change facets to update cache
         // This may create new internal-state facets, which we need to track
         let delta: FacetDelta = { type: 'added', facet: cloned };
-        
+
         if (cloned.type === 'state-change' && (cloned as any).targetFacetIds) {
           const newFacetDeltas = this.applyStateChangesToCache(cloned as any);
           // Note: newFacetDeltas are returned but caller needs to handle them
           // For now, we return the state-change delta, new facets are side effects
           // TODO: Return multiple deltas or queue new facets for next frame
         }
-        
+
         return delta;
       }
       case 'rewriteFacet': { // Exotemporal: rewrite existing facet
@@ -300,12 +308,20 @@ export class VEILStateManager {
           return null;
         }
         this.state.facets.delete(operation.id);
-        
+
         // Remove from cache if it's a state facet
         if (existing.type === 'state') {
           this.state.currentStateCache.delete(operation.id);
         }
-        
+
+        // Remove from agents registry for agent-registry facets
+        if (existing.type === 'agent-registry' && 'state' in existing) {
+          const agentState = (existing as any).state;
+          if (agentState.agentId) {
+            this.state.agents.delete(agentState.agentId);
+          }
+        }
+
         return { type: 'removed', facet: existing };
       }
       default:

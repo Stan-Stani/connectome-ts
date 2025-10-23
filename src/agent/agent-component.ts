@@ -25,13 +25,26 @@ export class AgentComponent extends VEILComponent implements RestorableComponent
   @reference('veilState') private veilState?: VEILStateManager;
   @reference('llmProvider') private llmProvider?: LLMProvider;
   
-  constructor(agent?: AgentInterface) {
+  constructor(agentOrConfig?: AgentInterface | { agentConfig: AgentConfig }) {
     super();
-    if (agent) {
-      this.agent = agent;
-      // Save agent config for restoration
-      if ('config' in agent) {
-        this.agentConfig = (agent as any).config;
+
+    console.log('[AgentComponent] constructor called with:', agentOrConfig ? Object.keys(agentOrConfig) : 'undefined');
+
+    // Handle both direct agent and config object (from declarative creation)
+    if (agentOrConfig) {
+      // Check if it's a config wrapper (from declarative component:add)
+      if ('agentConfig' in agentOrConfig && !('runCycle' in agentOrConfig)) {
+        // It's a config object, store the agent config
+        this.agentConfig = (agentOrConfig as { agentConfig: AgentConfig }).agentConfig;
+        console.log('[AgentComponent] Stored agentConfig:', this.agentConfig?.name);
+      } else {
+        // It's an actual agent object
+        this.agent = agentOrConfig as AgentInterface;
+        console.log('[AgentComponent] Stored agent directly');
+        // Save agent config for restoration
+        if ('config' in agentOrConfig) {
+          this.agentConfig = (agentOrConfig as any).config;
+        }
       }
     }
   }
@@ -49,38 +62,56 @@ export class AgentComponent extends VEILComponent implements RestorableComponent
    */
   async onReferencesResolved(): Promise<void> {
     console.log(`[AgentComponent ${this.element?.id}] onReferencesResolved - config: ${!!this.agentConfig}, agent: ${!!this.agent}, llm: ${!!this.llmProvider}, veil: ${!!this.veilState}`);
-    
+
     // If we have config but no agent, recreate it
     if (this.agentConfig && !this.agent && this.llmProvider && this.veilState) {
       console.log('✨ Recreating agent from config:', this.agentConfig.name || 'unnamed');
-      
+
       // Check if there's a custom agent factory registered
       const space = this.element?.space;
       const agentFactory = (space as any)?.getReference?.('agentFactory');
-      
+
       if (agentFactory && typeof agentFactory === 'function') {
         // Use custom factory
         this.agent = agentFactory(this.agentConfig, this.llmProvider, this.veilState);
+        console.log('[AgentComponent] Created agent via custom factory');
       } else {
         // Default to BasicAgent
         this.agent = new BasicAgent(this.agentConfig, this.llmProvider, this.veilState);
+        console.log('[AgentComponent] Created BasicAgent, has agent now:', !!this.agent);
       }
-      
+
       // Re-enable auto action registration if it was enabled
       if ((this.agentConfig as any).autoActionRegistration) {
         (this.agent as BasicAgent).enableAutoActionRegistration();
       }
+    } else {
+      console.log('[AgentComponent] NOT creating agent. Reasons:', {
+        hasConfig: !!this.agentConfig,
+        hasAgent: !!this.agent,
+        hasLLM: !!this.llmProvider,
+        hasVeil: !!this.veilState
+      });
     }
+
+    // Agent registration will happen in onFirstFrame()
   }
-  
+
   onMount(): void {
     // Subscribe to relevant events
     this.element.subscribe('frame:start');
     this.element.subscribe('frame:end');
     this.element.subscribe('agent:command');
     this.element.subscribe('agent:pending-activation');
-    
+
     // Agent registration will happen on first frame:start
+  }
+
+  onFirstFrame(): void {
+    // Register agent on first frame if we have everything we need
+    if (!this.agentRegistered && this.agent && this.veilState) {
+      this.registerAgent();
+    }
   }
   
   onUnmount(): void {
@@ -93,40 +124,49 @@ export class AgentComponent extends VEILComponent implements RestorableComponent
     }
   }
   
+  private registerAgent(): void {
+    if (this.agentRegistered) return;
+
+    console.log(`[AgentComponent ${this.element.id}] Registering agent...`);
+    const agentInfo = {
+      id: this.element.id,
+      name: this.agentConfig?.name || this.element.name || 'Agent',
+      type: 'assistant',
+      capabilities: ['chat', 'code', 'search'],
+      metadata: {
+        model: (this.agentConfig as any)?.modelName || 'unknown',
+        provider: (this.agentConfig as any)?.provider || 'unknown'
+      },
+      createdAt: new Date().toISOString()
+    };
+
+    this.addOperation({
+      type: 'addFacet',
+      facet: this.createAgentLifecycleFacet('register', agentInfo)
+    });
+
+    this.agentRegistered = true;
+  }
+
   async handleEvent(event: SpaceEvent): Promise<void> {
+    // IMPORTANT: Call parent handleEvent to enable onFirstFrame() lifecycle
+    await super.handleEvent(event);
+
     switch (event.topic) {
       case 'frame:start':
         // Register agent on first frame (agent might be created in onReferencesResolved)
         console.log(`[AgentComponent ${this.element.id}] frame:start - agent: ${!!this.agent}, veilState: ${!!this.veilState}, registered: ${this.agentRegistered}`);
         if (!this.agentRegistered && this.agent && this.veilState) {
-          console.log(`[AgentComponent ${this.element.id}] Registering agent...`);
-          const agentInfo = {
-            id: this.element.id,
-            name: this.agentConfig?.name || this.element.name || 'Agent',
-            type: 'assistant',
-            capabilities: ['chat', 'code', 'search'],
-            metadata: {
-              model: (this.agentConfig as any)?.modelName || 'unknown',
-              provider: (this.agentConfig as any)?.provider || 'unknown'
-            },
-            createdAt: new Date().toISOString()
-          };
-          
-          this.addOperation({
-            type: 'addFacet',
-            facet: this.createAgentLifecycleFacet('register', agentInfo)
-          });
-          
-          this.agentRegistered = true;
+          this.registerAgent();
         }
         break;
-        
+
       case 'frame:end':
         if (this.agent) {
           await this.handleFrameEnd(event as FrameEndEvent);
         }
         break;
-        
+
       case 'agent:command':
         if (this.agent) {
           this.handleAgentCommand(event.payload as AgentCommand);

@@ -56,10 +56,19 @@ export class AgentEffector extends BaseEffector {
     const config = (this as any).config || {};
     const agentElementId = config.agentElementId;
 
+    console.log(`[AgentEffector.findAgent] Looking for agent with ID: ${agentElementId}`);
+    console.log(`[AgentEffector.findAgent] Space children:`, space?.children.map(c => `${c.name}(${c.id})`));
+
     if (agentElementId && space) {
       const agentElement = space.children.find(c => c.id === agentElementId);
+      console.log(`[AgentEffector.findAgent] Found element by ID ${agentElementId}:`, !!agentElement);
       if (agentElement) {
-        const agentComponent = agentElement.getComponents(AgentComponent)[0];
+        const agentComponents = agentElement.getComponents(AgentComponent);
+        console.log(`[AgentEffector.findAgent] AgentComponents found:`, agentComponents.length);
+        const agentComponent = agentComponents[0];
+        if (agentComponent) {
+          console.log(`[AgentEffector.findAgent] AgentComponent has agent:`, !!(agentComponent as any)?.agent);
+        }
         this.agent = (agentComponent as any)?.agent;
         if (this.agent) {
           console.log(`[AgentEffector] Found agent in element ${agentElementId}`);
@@ -69,13 +78,22 @@ export class AgentEffector extends BaseEffector {
 
     if (!this.agent) {
       const agentElement = space?.children.find(c => c.name === 'agent');
+      console.log(`[AgentEffector.findAgent] Fallback: Found element by name 'agent':`, !!agentElement);
       if (agentElement) {
         const agentComponent = agentElement.getComponents(AgentComponent)[0];
+        console.log(`[AgentEffector.findAgent] Fallback: AgentComponent found:`, !!agentComponent);
+        if (agentComponent) {
+          console.log(`[AgentEffector.findAgent] Fallback: AgentComponent has agent:`, !!(agentComponent as any)?.agent);
+        }
         this.agent = (agentComponent as any)?.agent;
         if (this.agent) {
           console.log(`[AgentEffector] Found agent in element with name 'agent'`);
         }
       }
+    }
+
+    if (!this.agent) {
+      console.log('[AgentEffector.findAgent] FAILED to find agent anywhere');
     }
   }
   
@@ -88,6 +106,7 @@ export class AgentEffector extends BaseEffector {
 
     // Skip if agent not initialized yet
     if (!this.agent) {
+      console.log("[AgentEffector] skipping because no agent");
       return { events, externalActions };
     }
     
@@ -96,26 +115,35 @@ export class AgentEffector extends BaseEffector {
       if (change.type !== 'added') continue;
       
       if (change.facet.type === 'agent-activation') {
+        console.log("[AgentEffector] pondering an agent-activation facet");
+
         const activationId = change.facet.id;
         const activationState = hasStateAspect(change.facet)
           ? (change.facet.state as Record<string, any>)
           : {};
-        
+
         // Skip if already processing
         if (this.processingActivations.has(activationId)) continue;
-        
+
         // Check if this activation targets this agent
         const targetAgentId = activationState.targetAgentId as string | undefined;
         const agentState = this.agent.getState();
-        
+
         // Basic targeting logic (can be enhanced)
         const isTargeted = !targetAgentId || targetAgentId === this.getAgentId();
         if (!isTargeted) continue;
-        
+
+        // Flatten metadata into activation state for shouldActivate compatibility
+        // createAgentActivation nests extra fields under metadata, but shouldActivate expects them at top level
+        const flattenedActivation = {
+          ...activationState,
+          ...(activationState.metadata || {})
+        };
+
         // Check if agent should activate
         // Convert ReadonlyVEILState to VEILState for legacy agent interface
         const veilState = state as any;
-        if (!this.agent.shouldActivate(activationState, veilState)) {
+        if (!this.agent.shouldActivate(flattenedActivation, veilState)) {
           continue;
         }
 
@@ -134,8 +162,9 @@ export class AgentEffector extends BaseEffector {
         // Mark as processing
         this.processingActivations.add(activationId);
 
-        const streamRef = activationState.streamRef as StreamRef | undefined;
-        const streamId = streamRef?.streamId ?? (activationState.streamId as string | undefined) ?? 'default';
+        // Use flattened activation for streamRef/streamId access (may be in metadata)
+        const streamRef = flattenedActivation.streamRef as StreamRef | undefined;
+        const streamId = streamRef?.streamId ?? (flattenedActivation.streamId as string | undefined) ?? 'default';
 
         // Get the context from the state
         const contextState = contextFacet.state as { context: RenderedContext };

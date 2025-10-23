@@ -1,13 +1,8 @@
 /**
- * Discord Box Game - Interactive RETM Implementation
+ * Discord Box Game Application - Host Architecture Implementation
  *
- * This implementation provides the full box game experience via Discord with:
- * - Slash commands (/create-box, /open-box)
- * - Interactive buttons (Open box buttons in embeds)
- * - Typing indicators when agent is thinking
- * - Rich embeds for game status
- * - Real LLM integration
- * - Complete RETM architecture
+ * This implements the ConnectomeApplication interface for the Discord Box Game,
+ * enabling automatic persistence and restoration of game state.
  */
 
 import { config } from 'dotenv';
@@ -21,36 +16,33 @@ import { BasicAgent } from '../src/agent/basic-agent';
 import { AgentComponent } from '../src/agent/agent-component';
 import { AgentEffector } from '../src/agent/agent-effector';
 import { ContextTransform } from '../src/hud/context-transform';
-import { AnthropicProvider } from '../src/llm/anthropic-provider';
-import { MockLLMProvider } from '../src/llm/mock-llm-provider';
 import { LLMProvider } from '../src/llm/llm-interface';
-import { DebugServer } from '../src/debug';
 import { AxonLoaderComponent } from '../src/components/axon-loader';
+import { ComponentRegistry } from '../src/persistence/component-registry';
+import { ConnectomeApplication } from '../src/host/types';
 import {
-  Receptor,
-  Transform,
-  Effector,
-  Maintainer,
   ReadonlyVEILState,
   FacetDelta,
   EffectorResult
 } from '../src/spaces/receptor-effector-types';
+import { BaseReceptor, BaseTransform, BaseEffector } from '../src/components/base-martem';
 import { SpaceEvent } from '../src/spaces/types';
 import { Facet, VEILDelta } from '../src/veil/types';
 import {
   createEventFacet,
   createStateFacet,
-  createSpeechFacet,
   createAgentActivation,
   addFacet,
   changeFacet
 } from '../src/helpers/factories';
+import { ElementRequestReceptor, ElementTreeMaintainer, ElementTreeTransform } from '../src/spaces/element-tree-receptors';
+import { AgentLifecycleTransform } from '../src/agent/agent-lifecycle-transform';
 
 // ============================================================================
 // DATA STRUCTURES
 // ============================================================================
 
-interface BoxState {
+export interface BoxState {
   boxId: string;
   contents: string[];
   creator: string;
@@ -58,17 +50,11 @@ interface BoxState {
   createdAt: number;
 }
 
-interface GameCommand {
-  action: 'create-box' | 'open-box' | 'say';
-  args: string[];
-  user: string;
-  interactionId?: string; // For Discord interaction replies
-}
-
-interface DiscordConnection {
-  element: Element;
+export interface BoxGameConfig {
   guildId: string;
   channelId: string;
+  discordBotToken: string;
+  llmProvider: LLMProvider;
 }
 
 // ============================================================================
@@ -78,11 +64,8 @@ interface DiscordConnection {
 /**
  * DiscordSlashReceptor: Handle Discord slash command interactions
  */
-class DiscordSlashReceptor implements Receptor {
+export class DiscordSlashReceptor extends BaseReceptor {
   topics = ['discord:slash-command'];
-
-  async mount() {}
-  async unmount() {}
 
   transform(event: SpaceEvent, state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
@@ -158,11 +141,8 @@ class DiscordSlashReceptor implements Receptor {
 /**
  * DiscordButtonReceptor: Handle Discord button click interactions
  */
-class DiscordButtonReceptor implements Receptor {
+export class DiscordButtonReceptor extends BaseReceptor {
   topics = ['discord:button-click'];
-
-  async mount() {}
-  async unmount() {}
 
   transform(event: SpaceEvent, state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
@@ -194,11 +174,8 @@ class DiscordButtonReceptor implements Receptor {
 /**
  * DiscordMessageReceptor: Handle regular Discord messages and activate agent
  */
-class DiscordMessageReceptor implements Receptor {
+export class DiscordMessageReceptor extends BaseReceptor {
   topics = ['discord:message'];
-
-  async mount() {}
-  async unmount() {}
 
   transform(event: SpaceEvent, state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
@@ -245,11 +222,8 @@ class DiscordMessageReceptor implements Receptor {
 /**
  * AgentGameActionReceptor: Handle agent tool use for game actions
  */
-class AgentGameActionReceptor implements Receptor {
+export class AgentGameActionReceptor extends BaseReceptor {
   topics = ['agent:game-action'];
-
-  async mount() {}
-  async unmount() {}
 
   transform(event: SpaceEvent, state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
@@ -291,18 +265,16 @@ class AgentGameActionReceptor implements Receptor {
 /**
  * BoxGameReceptor: Handle game events (box created/opened/errors)
  */
-class BoxGameReceptor implements Receptor {
+export class BoxGameReceptor extends BaseReceptor {
   topics = ['game:box-created', 'game:box-opened', 'game:box-not-found', 'game:box-already-open'];
-
-  async mount() {}
-  async unmount() {}
 
   transform(event: SpaceEvent, state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
 
     if (event.topic === 'game:box-created') {
       const payload = event.payload as any;
-      deltas.push(addFacet(createStateFacet({
+      console.log(`[BoxGameReceptor] Creating box facet for ${payload.boxId} with contents:`, payload.contents);
+      const boxFacet = createStateFacet({
         id: `box-${payload.boxId}`,
         content: `📦 Box ${payload.boxId}: ${payload.contents.join(', ')} (created by ${payload.creator})`,
         entityType: 'component',
@@ -314,7 +286,9 @@ class BoxGameReceptor implements Receptor {
           isOpen: false,
           createdAt: Date.now()
         } as BoxState
-      })));
+      });
+      console.log(`[BoxGameReceptor] Box facet created:`, JSON.stringify(boxFacet));
+      deltas.push(addFacet(boxFacet));
       deltas.push(addFacet(createEventFacet({
         id: `box-created-event-${payload.boxId}`,
         content: `${payload.creator} created box ${payload.boxId} with ${payload.contents.length} items`,
@@ -378,23 +352,26 @@ class BoxGameReceptor implements Receptor {
 /**
  * DiscordStatusTransform: Generate Discord embeds showing game status
  */
-class DiscordStatusTransform implements Transform {
-  async mount() {}
-  async unmount() {}
-
+export class DiscordStatusTransform extends BaseTransform {
   process(state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
 
     // Get boxes
-    const boxes = state.getFacetsByType('state')
+    const allStateFacets = state.getFacetsByType('state');
+    console.log(`[DiscordStatusTransform] Total state facets: ${allStateFacets.length}`);
+
+    const boxes = allStateFacets
       .filter(f => {
         const isContextScope = f.scopes?.some((s: string) =>
           s === 'user-rendered-context' || s === 'agent-rendered-context' || s === 'discord-rendered-context'
         );
         const isActualBox = f.state && 'boxId' in f.state && 'creator' in f.state && 'contents' in f.state;
+        console.log(`[DiscordStatusTransform] Facet ${f.id}: isActualBox=${isActualBox}, isContextScope=${isContextScope}, scopes=${JSON.stringify(f.scopes)}`);
         return isActualBox && !isContextScope;
       })
       .map(f => f.state as BoxState);
+
+    console.log(`[DiscordStatusTransform] Found ${boxes.length} boxes:`, JSON.stringify(boxes));
 
     // Get recent events
     const events = state.getFacetsByType('event')
@@ -447,10 +424,7 @@ class DiscordStatusTransform implements Transform {
 /**
  * AgentContextTransform: Generate context for agent (for HUD/LLM)
  */
-class AgentContextTransform implements Transform {
-  async mount() {}
-  async unmount() {}
-
+export class AgentContextTransform extends BaseTransform {
   process(state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
 
@@ -540,26 +514,30 @@ class AgentContextTransform implements Transform {
 
 /**
  * AgentSpeechToDiscordTransform: Route agent speech to Discord and create send actions
+ * FIXED: Use component-state facet for persistence
  */
-class AgentSpeechToDiscordTransform implements Transform {
-  private processedSpeech = new Set<string>();
+export class AgentSpeechToDiscordTransform extends BaseTransform {
+  private componentStateId = 'speech-tracker-state';
 
-  constructor(private defaultChannelId: string) {}
-
-  async mount() {}
-  async unmount() {}
+  constructor(private defaultChannelId: string) {
+    super();
+  }
 
   process(state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
 
+    // Get processed speech IDs from component-state
+    const stateFacet = Array.from(state.facets.values()).find(f => f.id === this.componentStateId);
+    const processedSpeech = new Set<string>(stateFacet?.state?.processedSpeech || []);
+
     // Find agent speech facets that haven't been processed yet
     const agentSpeech = state.getFacetsByType('speech').filter(f => {
       const agentId = (f as any).agentId;
-      return agentId && !this.processedSpeech.has(f.id);
+      return agentId && !processedSpeech.has(f.id);
     });
 
     for (const speech of agentSpeech) {
-      this.processedSpeech.add(speech.id);
+      processedSpeech.add(speech.id);
 
       // Determine channel ID from activation context or use default
       const activations = state.getFacetsByType('activation');
@@ -587,26 +565,42 @@ class AgentSpeechToDiscordTransform implements Transform {
       }));
     }
 
+    // Update component-state if speech was processed
+    if (agentSpeech.length > 0) {
+      deltas.push(addFacet({
+        id: this.componentStateId,
+        type: 'component-state',
+        componentType: 'AgentSpeechToDiscordTransform',
+        componentClass: 'transform',
+        componentId: 'speech-tracker',
+        state: {
+          processedSpeech: Array.from(processedSpeech)
+        }
+      }));
+    }
+
     return deltas;
   }
 }
 
 /**
  * AgentActivationTransform: Create agent activations for interesting events
+ * FIXED: Use component-state facet for persistence
  */
-class AgentActivationTransform implements Transform {
-  private processedEvents = new Set<string>();
-  private lastActivationTime = 0;
+export class AgentActivationTransform extends BaseTransform {
+  private componentStateId = 'activation-tracker-state';
   private readonly ACTIVATION_COOLDOWN_MS = 2000;
-
-  async mount() {}
-  async unmount() {}
 
   process(state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
     const now = Date.now();
 
-    if (now - this.lastActivationTime < this.ACTIVATION_COOLDOWN_MS) {
+    // Get tracker state from VEIL
+    const stateFacet = Array.from(state.facets.values()).find(f => f.id === this.componentStateId);
+    const processedEvents = new Set<string>(stateFacet?.state?.processedEvents || []);
+    const lastActivationTime = stateFacet?.state?.lastActivationTime || 0;
+
+    if (now - lastActivationTime < this.ACTIVATION_COOLDOWN_MS) {
       return deltas;
     }
 
@@ -622,12 +616,11 @@ class AgentActivationTransform implements Transform {
       const isErrorEvent = eventType === 'box-not-found' || eventType === 'box-already-open';
 
       // Already processed
-      if (this.processedEvents.has(f.id)) return false;
+      if (processedEvents.has(f.id)) return false;
 
       // Discord message from a user
-      // Note: Bot's own messages are already filtered by DiscordReceptor using authorId
       if (displayName === 'discord-message') {
-        return author !== undefined; // Any Discord message from a user
+        return author !== undefined;
       }
 
       // Box game events
@@ -638,7 +631,7 @@ class AgentActivationTransform implements Transform {
 
     // Process event facets
     for (const event of interestingEvents) {
-      this.processedEvents.add(event.id);
+      processedEvents.add(event.id);
       const eventType = event.state?.eventType;
       const displayName = (event as any).displayName;
       const channelId = event.state?.metadata?.channelId;
@@ -650,7 +643,7 @@ class AgentActivationTransform implements Transform {
 
       if (displayName === 'discord-message') {
         reason = `${author} sent a message: "${content}"`;
-        priority = 'high'; // User messages have high priority
+        priority = 'high';
       } else if (eventType) {
         reason = `New ${eventType} event requires attention`;
         priority = eventType === 'box-opened' ? 'high' : 'normal';
@@ -670,8 +663,19 @@ class AgentActivationTransform implements Transform {
       deltas.push(addFacet(activationFacet));
     }
 
+    // Update component-state if events were processed
     if (deltas.length > 0) {
-      this.lastActivationTime = now;
+      deltas.push(addFacet({
+        id: this.componentStateId,
+        type: 'component-state',
+        componentType: 'AgentActivationTransform',
+        componentClass: 'transform',
+        componentId: 'activation-tracker',
+        state: {
+          processedEvents: Array.from(processedEvents),
+          lastActivationTime: now
+        }
+      }));
     }
 
     return deltas;
@@ -683,18 +687,13 @@ class AgentActivationTransform implements Transform {
 // ============================================================================
 
 /**
- * BoxGameEffector: Game world simulation with internal state
- * Processes both game-action facets (from users/Discord) and action facets (from agent tools)
+ * BoxGameEffector: Game world simulation
+ * FIXED: Read boxes from VEIL state instead of internal Map
  */
-class BoxGameEffector implements Effector {
+export class BoxGameEffector extends BaseEffector {
   facetFilters = [{ type: 'game-action' }, { type: 'action' }];
 
-  private boxes = new Map<string, BoxState>();
-
-  async mount() {}
-  async unmount() {}
-
-  async process(changes: FacetDelta[]): Promise<EffectorResult> {
+  async process(changes: FacetDelta[], state: ReadonlyVEILState): Promise<EffectorResult> {
     const events: SpaceEvent[] = [];
 
     for (const change of changes) {
@@ -709,9 +708,9 @@ class BoxGameEffector implements Effector {
           const channelId = facet.state?.channelId;
 
           if (action === 'create-box') {
-            events.push(...this.handleCreateBox(params.contents!, params.actor, interactionId, channelId));
+            events.push(...this.handleCreateBox(params.contents!, params.actor, interactionId, channelId, state));
           } else if (action === 'open-box') {
-            events.push(...this.handleOpenBox(params.boxId!, params.actor, interactionId, channelId));
+            events.push(...this.handleOpenBox(params.boxId!, params.actor, interactionId, channelId, state));
           }
         }
         // Handle action facets (from agent tool use - @box.create/@box.open)
@@ -723,11 +722,11 @@ class BoxGameEffector implements Effector {
           if (toolName === 'box.create') {
             const itemsString = params.value || params.items || '';
             const contents = itemsString.split(',').map((item: string) => item.trim()).filter((item: string) => item);
-            events.push(...this.handleCreateBox(contents, 'agent', undefined, channelId));
+            events.push(...this.handleCreateBox(contents, 'agent', undefined, channelId, state));
           }
           else if (toolName === 'box.open') {
             const boxId = params.value || params.boxId || '';
-            events.push(...this.handleOpenBox(boxId, 'agent', undefined, channelId));
+            events.push(...this.handleOpenBox(boxId, 'agent', undefined, channelId, state));
           }
         }
       }
@@ -736,16 +735,8 @@ class BoxGameEffector implements Effector {
     return { events };
   }
 
-  private handleCreateBox(contents: string[], creator: string, interactionId?: string, channelId?: string): SpaceEvent[] {
+  private handleCreateBox(contents: string[], creator: string, interactionId?: string, channelId?: string, state?: ReadonlyVEILState): SpaceEvent[] {
     const boxId = `box${Date.now()}`;
-
-    this.boxes.set(boxId, {
-      boxId,
-      contents,
-      creator,
-      isOpen: false,
-      createdAt: Date.now()
-    });
 
     return [{
       topic: 'game:box-created',
@@ -755,8 +746,10 @@ class BoxGameEffector implements Effector {
     }];
   }
 
-  private handleOpenBox(boxId: string, opener: string, interactionId?: string, channelId?: string): SpaceEvent[] {
-    const box = this.boxes.get(boxId);
+  private handleOpenBox(boxId: string, opener: string, interactionId?: string, channelId?: string, state?: ReadonlyVEILState): SpaceEvent[] {
+    // Read box from VEIL state instead of internal map
+    const boxFacet = state?.facets.get(`box-${boxId}`);
+    const box = boxFacet?.state as BoxState | undefined;
 
     if (!box) {
       return [{
@@ -776,9 +769,6 @@ class BoxGameEffector implements Effector {
       }];
     }
 
-    box.isOpen = true;
-    this.boxes.set(boxId, box);
-
     return [{
       topic: 'game:box-opened',
       source: { elementId: 'box-game-effector', elementPath: [] },
@@ -790,17 +780,8 @@ class BoxGameEffector implements Effector {
 
 /**
  * DiscordAfferentEffector: Controls discord-afferent and sends typing indicators
- * Application-level effector that watches for:
- * - agent-activation facets → sends typing indicators
- * - action facets with discord:* commands → invokes afferent methods
- * - game-action/event facets → sends interaction replies
  */
-class DiscordAfferentEffector implements Effector {
-  constructor(
-    private discordElement: Element,
-    private channelId: string
-  ) {}
-
+export class DiscordAfferentEffector extends BaseEffector {
   facetFilters = [
     { type: 'action' },
     { type: 'game-action' },
@@ -808,8 +789,12 @@ class DiscordAfferentEffector implements Effector {
     { type: 'event' }
   ];
 
-  async mount() {}
-  async unmount() {}
+  constructor(
+    private discordElement: Element,
+    private channelId: string
+  ) {
+    super();
+  }
 
   private getAfferent(): any {
     // Get the afferent component from the discord element
@@ -856,8 +841,13 @@ class DiscordAfferentEffector implements Effector {
             f.id === 'discord-game-status'
           );
 
+          console.log(`[/box-status] discord-game-status facet found:`, statusFacet ? 'YES' : 'NO');
+          console.log(`[/box-status] discord-game-status data:`, JSON.stringify(statusFacet?.state));
+
           const embedData = statusFacet?.state || { boxes: [], events: [], stats: {} };
           const { boxes = [], events: gameEvents = [], stats = {} } = embedData;
+
+          console.log(`[/box-status] Sending embed with ${boxes.length} boxes, ${gameEvents.length} events`);
 
           // Build embed
           const embed = {
@@ -974,12 +964,424 @@ class DiscordAfferentEffector implements Effector {
 }
 
 // ============================================================================
-// AGENT & SETUP
+// APPLICATION CLASS
 // ============================================================================
 
-class BoxGameAgent extends BasicAgent {
-  constructor(llmProvider: LLMProvider, veilState: VEILStateManager, channelId: string) {
-    super({
+export class BoxGameDiscordApplication implements ConnectomeApplication {
+  private config: BoxGameConfig;
+  private discordElement?: Element;
+  private wasRestored = false;
+
+  constructor(config: BoxGameConfig) {
+    this.config = config;
+  }
+
+  isRestored(): boolean {
+    return this.wasRestored;
+  }
+
+  async createSpace(hostRegistry?: Map<string, any>, lifecycleId?: string, spaceId?: string): Promise<{ space: Space; veilState: VEILStateManager }> {
+    console.log('[BoxGameApp] Creating Space and VEIL...');
+    const veilState = new VEILStateManager();
+    const space = new Space(veilState, hostRegistry, lifecycleId, spaceId);
+
+    // Element Tree infrastructure is initialized by Host before initialize() is called
+    // No need to register it here
+
+    return { space, veilState };
+  }
+
+  async initialize(space: Space, veilState: VEILStateManager): Promise<void> {
+    console.log('🎮 Initializing Discord Box Game...\n');
+
+    // Register all components FIRST (needed for component:add events and declarative creation)
+    this.getComponentRegistry();
+
+    // Create main game element (declaratively)
+    console.log('🆕 Creating game element via element:create event');
+    space.emit({
+      topic: 'element:create',
+      source: space.getRef(),
+      payload: {
+        name: 'discord-box-game',
+        elementId: 'discord-box-game',
+        components: []
+      },
+      timestamp: Date.now()
+    });
+
+    // Create Discord connection element (declaratively)
+    console.log('🔌 Creating Discord connection...');
+    const axonUrl = `axon://localhost:8080/modules/discord-afferent/manifest?host=localhost:8081&path=/ws&guild=${this.config.guildId}&agent=box-game-bot&token=${encodeURIComponent(this.config.discordBotToken)}`;
+
+    space.emit({
+      topic: 'element:create',
+      source: space.getRef(),
+      payload: {
+        name: 'discord',
+        elementId: 'discord-connection',
+        components: [{
+          type: 'AxonLoaderComponent',
+          config: { url: axonUrl }
+        }]
+      },
+      timestamp: Date.now()
+    });
+
+    // Wait for the maintainer to process element:create events
+    // Events are processed asynchronously via setImmediate in Space.emit()
+    await new Promise(resolve => setImmediate(resolve));
+
+    // Now find the created elements
+    const gameElement = space.children.find(e => e.name === 'discord-box-game');
+    if (!gameElement) {
+      throw new Error('Failed to create game element');
+    }
+
+    this.discordElement = space.children.find(e => e.name === 'discord');
+    if (!this.discordElement) {
+      throw new Error('Failed to create discord element');
+    }
+
+    // Get the AxonLoader that was created
+    const axonLoader = this.discordElement.components.find(c => c instanceof AxonLoaderComponent) as AxonLoaderComponent;
+    if (!axonLoader) {
+      throw new Error('AxonLoaderComponent not found');
+    }
+
+    // Create receptors for Discord initialization
+    const initReceptor = this.createDiscordInitReceptor();
+    const connectionReceptor = this.createDiscordConnectionReceptor();
+
+    gameElement.addComponent(initReceptor);
+    gameElement.addComponent(connectionReceptor);
+
+    // Connect to Discord AXON server (URL already passed in config)
+    const waitPromise = connectionReceptor.waitForConnection();
+    await axonLoader.connect(axonUrl);
+    await waitPromise;
+
+    // Set up RETM pipeline declaratively via component:add events
+    console.log('🔧 Setting up RETM architecture via component:add events...');
+
+    // Define all components to be added
+    const gameComponents = [
+      // Receptors
+      { type: 'DiscordSlashReceptor', class: 'receptor' },
+      { type: 'DiscordButtonReceptor', class: 'receptor' },
+      { type: 'DiscordMessageReceptor', class: 'receptor' },
+      { type: 'AgentGameActionReceptor', class: 'receptor' },
+      { type: 'BoxGameReceptor', class: 'receptor' },
+      // Transforms
+      { type: 'AgentLifecycleTransform', class: 'transform' }, // Must run early to register agents
+      { type: 'DiscordStatusTransform', class: 'transform' },
+      { type: 'AgentContextTransform', class: 'transform' },
+      { type: 'AgentActivationTransform', class: 'transform' },
+      { type: 'AgentSpeechToDiscordTransform', class: 'transform', config: { channelId: this.config.channelId } },
+      { type: 'ContextTransform', class: 'transform' },
+      // Effectors
+      { type: 'BoxGameEffector', class: 'effector' },
+      { type: 'DiscordAfferentEffector', class: 'effector', config: { channelId: this.config.channelId } }
+    ];
+
+    // Emit component:add events for each component
+    for (const comp of gameComponents) {
+      space.emit({
+        topic: 'component:add',
+        source: space.getRef(),
+        payload: {
+          elementId: gameElement.id,
+          componentType: comp.type,
+          componentClass: comp.class,
+          config: comp.config
+        },
+        timestamp: Date.now()
+      });
+    }
+
+    // Wait for the maintainer to process component:add events
+    await new Promise(resolve => setImmediate(resolve));
+
+    // Create AI agent element (declaratively)
+    console.log('🤖 Creating AI agent element...');
+    space.emit({
+      topic: 'element:create',
+      source: space.getRef(),
+      payload: {
+        name: 'agent',
+        elementId: 'box-game-agent',
+        components: []
+      },
+      timestamp: Date.now()
+    });
+
+    // Add agent component declaratively (config will be used to create agent in onReferencesResolved)
+    const agentConfig = {
+      systemPrompt: `You are an AI playing an interactive box game in Discord!
+
+Game Rules:
+- Players create boxes with hidden contents using /create-box
+- Box contents are only visible to the creator until opened
+- Anyone can open any box to reveal contents to everyone
+- Players can also click "Open" buttons in Discord to open boxes
+
+You can also create and open boxes yourself using the tools available to you!
+Use @box.create to make a box with items, and @box.open to open any box.
+
+You can engage with players naturally - react to boxes being created and opened,
+express curiosity about mystery boxes, celebrate discoveries, and have fun conversations
+about the game. Be playful, creative, and encouraging!`,
+      defaultMaxTokens: 250,
+      defaultTemperature: 0.8,
+      name: 'box-game-ai',
+      tools: [
+        {
+          name: 'box.create',
+          description: 'Create a new mystery box with items',
+          parameters: {
+            items: {
+              type: 'string',
+              description: 'Comma-separated list of items to put in the box (e.g., "sword,potion,treasure")'
+            }
+          },
+          elementPath: [],
+          emitEvent: {
+            topic: 'agent:game-action',
+            payloadTemplate: {
+              action: 'create-box',
+              args: ['{{items}}'],
+              user: 'agent',
+              channelId: this.config.channelId
+            }
+          }
+        },
+        {
+          name: 'box.open',
+          description: 'Open an existing box to reveal its contents',
+          parameters: {
+            boxId: {
+              type: 'string',
+              description: 'The ID of the box to open (e.g., "box1234567890")'
+            }
+          },
+          elementPath: [],
+          emitEvent: {
+            topic: 'agent:game-action',
+            payloadTemplate: {
+              action: 'open-box',
+              args: ['{{boxId}}'],
+              user: 'agent',
+              channelId: this.config.channelId
+            }
+          }
+        }
+      ]
+    };
+
+    // Emit component:add for agent component (using placeholder ID)
+    const agentElementId = 'box-game-agent';
+    space.emit({
+      topic: 'component:add',
+      source: space.getRef(),
+      payload: {
+        elementId: agentElementId,
+        componentType: 'AgentComponent',
+        componentClass: 'component',
+        config: { agentConfig }
+      },
+      timestamp: Date.now()
+    });
+
+    // Add agent effector declaratively
+    space.emit({
+      topic: 'component:add',
+      source: space.getRef(),
+      payload: {
+        elementId: gameElement.id,
+        componentType: 'AgentEffector',
+        componentClass: 'effector',
+        config: { agentElementId }
+      },
+      timestamp: Date.now()
+    });
+
+    // Wait for the maintainer to process agent element and component:add events
+    await new Promise(resolve => setImmediate(resolve));
+
+    // Add tool instructions
+    await this.addToolInstructions(space);
+
+    // Register slash commands and join channel
+    await this.setupDiscordCommands(space);
+
+    console.log('✅ Discord Box Game initialized\n');
+  }
+
+  getComponentRegistry(): typeof ComponentRegistry {
+    // Register all custom components for restoration
+    ComponentRegistry.register('DiscordSlashReceptor', DiscordSlashReceptor);
+    ComponentRegistry.register('DiscordButtonReceptor', DiscordButtonReceptor);
+    ComponentRegistry.register('DiscordMessageReceptor', DiscordMessageReceptor);
+    ComponentRegistry.register('AgentGameActionReceptor', AgentGameActionReceptor);
+    ComponentRegistry.register('BoxGameReceptor', BoxGameReceptor);
+    ComponentRegistry.register('DiscordStatusTransform', DiscordStatusTransform);
+    ComponentRegistry.register('AgentContextTransform', AgentContextTransform);
+    ComponentRegistry.register('AgentActivationTransform', AgentActivationTransform);
+    ComponentRegistry.register('BoxGameEffector', BoxGameEffector);
+    ComponentRegistry.register('AxonLoaderComponent', AxonLoaderComponent);
+
+    // Components with constructor parameters - config will be applied after construction
+    const app = this;
+    const channelId = this.config.channelId;
+
+    class AgentSpeechToDiscordTransformWrapper extends AgentSpeechToDiscordTransform {
+      constructor() {
+        // Use default channelId, will be overridden by config if present
+        super(channelId);
+      }
+    }
+    ComponentRegistry.register('AgentSpeechToDiscordTransform', AgentSpeechToDiscordTransformWrapper);
+
+    class DiscordAfferentEffectorWrapper extends DiscordAfferentEffector {
+      constructor() {
+        // Use placeholders - will be set from config and element tree
+        super(app.discordElement as any, channelId);
+      }
+    }
+    ComponentRegistry.register('DiscordAfferentEffector', DiscordAfferentEffectorWrapper);
+
+    ComponentRegistry.register('AgentEffector', AgentEffector);
+    ComponentRegistry.register('AgentComponent', AgentComponent);
+    ComponentRegistry.register('AgentLifecycleTransform', AgentLifecycleTransform);
+    ComponentRegistry.register('ContextTransform', ContextTransform);
+
+    return ComponentRegistry;
+  }
+
+  async onStart(space: Space, veilState: VEILStateManager): Promise<void> {
+    console.log('🚀 Box Game started (fresh)!\n');
+
+    // Send welcome message on fresh start
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    await this.executeDiscordAction(space, 'send', {
+      channelId: this.config.channelId,
+      message: '🎮 **Box Game is now active!**\n\nUse `/create-box` to create a mystery box and `/open-box` to reveal its contents!\nUse `/box-status` to see all boxes and recent activity.'
+    });
+  }
+
+  async onRestore(space: Space, veilState: VEILStateManager): Promise<void> {
+    this.wasRestored = true;
+    console.log('♻️  Box Game restored from persistence!\n');
+
+    // Find discord element
+    this.discordElement = space.children.find(c => c.name === 'discord');
+    if (!this.discordElement) {
+      console.error('❌ Discord element not found after restoration!');
+      return;
+    }
+
+    // Update DiscordAfferentEffector components with the restored discord element
+    const gameElement = space.children.find(c => c.name === 'discord-box-game');
+    if (gameElement) {
+      for (const component of gameElement.components) {
+        if (component instanceof DiscordAfferentEffector) {
+          // Update the discord element reference
+          (component as any).discordElement = this.discordElement;
+        }
+      }
+    }
+
+    // Debug: Check what was restored
+    const state = veilState.getState();
+    console.log(`[Restore Debug] Current sequence: ${state.currentSequence}`);
+    console.log(`[Restore Debug] Total facets: ${state.facets.size}`);
+
+    // Count box facets
+    const boxFacets = Array.from(state.facets.values()).filter(f =>
+      f.type === 'state' && f.id.startsWith('box-')
+    );
+    console.log(`[Restore Debug] Box facets found: ${boxFacets.length}`);
+    boxFacets.forEach(f => {
+      console.log(`[Restore Debug]   - ${f.id}: ${JSON.stringify((f.state as any)?.boxId)}`);
+    });
+
+    // Reconnect to Discord (AxonLoader should handle this automatically)
+    console.log('🔌 Discord reconnection handled by AxonLoader...');
+
+    // Rejoin channel
+    await this.executeDiscordAction(space, 'join', { channelId: this.config.channelId });
+
+    // Send restoration message with box count
+    const boxCount = boxFacets.length;
+    await this.executeDiscordAction(space, 'send', {
+      channelId: this.config.channelId,
+      message: `🔄 **Box Game restored!** I'm back online and ${boxCount} ${boxCount === 1 ? 'box is' : 'boxes are'} preserved.\n\nUse \`/box-status\` to see the current game state.`
+    });
+
+    console.log('✅ Discord reconnection complete\n');
+  }
+
+  // Helper methods
+
+  private createDiscordInitReceptor(): any {
+    const DiscordInitReceptor = class extends BaseReceptor {
+      topics = ['axon:module-loaded'];
+
+      transform(event: SpaceEvent, state: ReadonlyVEILState): VEILDelta[] {
+        const payload = event.payload as any;
+
+        if (payload.module === 'discord-afferent') {
+          console.log('📡 Discord Afferent module loaded, triggering connection...');
+
+          return [addFacet({
+            id: `discord-init-${Date.now()}`,
+            type: 'init',
+            content: 'Initialize Discord connection',
+            timestamp: Date.now(),
+            streamId: 'system:discord'
+          })];
+        }
+
+        return [];
+      }
+    };
+
+    return new DiscordInitReceptor();
+  }
+
+  private createDiscordConnectionReceptor(): any {
+    const DiscordConnectionReceptor = class extends BaseReceptor {
+      topics = ['discord:connected'];
+      private resolver?: () => void;
+
+      transform(event: SpaceEvent, state: ReadonlyVEILState): VEILDelta[] {
+        console.log('✅ Discord connected!\n');
+        if (this.resolver) {
+          this.resolver();
+        }
+        return [
+          addFacet(createEventFacet({
+            id: `discord-connection-${Date.now()}`,
+            content: 'Discord connection established',
+            source: 'discord',
+            eventType: 'connection',
+            streamId: 'discord:system'
+          }))
+        ];
+      }
+
+      waitForConnection(): Promise<void> {
+        return new Promise(resolve => {
+          this.resolver = resolve;
+        });
+      }
+    };
+
+    return new DiscordConnectionReceptor();
+  }
+
+  private createBoxGameAgent(veilState: VEILStateManager): BasicAgent {
+    const agent = new BasicAgent({
       systemPrompt: `You are an AI playing an interactive box game in Discord!
 
 Game Rules:
@@ -997,10 +1399,10 @@ about the game. Be playful, creative, and encouraging!`,
       defaultMaxTokens: 250,
       defaultTemperature: 0.8,
       name: 'box-game-ai'
-    }, llmProvider, veilState);
+    }, this.config.llmProvider, veilState);
 
-    // Register tools for agent to create and open boxes
-    this.registerTool({
+    // Register tools
+    agent.registerTool({
       name: 'box.create',
       description: 'Create a new mystery box with items',
       parameters: {
@@ -1009,19 +1411,19 @@ about the game. Be playful, creative, and encouraging!`,
           description: 'Comma-separated list of items to put in the box (e.g., "sword,potion,treasure")'
         }
       },
-      elementPath: [],  // Emit from agent element itself
+      elementPath: [],
       emitEvent: {
         topic: 'agent:game-action',
         payloadTemplate: {
           action: 'create-box',
           args: ['{{items}}'],
           user: 'agent',
-          channelId
+          channelId: this.config.channelId
         }
       }
     });
 
-    this.registerTool({
+    agent.registerTool({
       name: 'box.open',
       description: 'Open an existing box to reveal its contents',
       parameters: {
@@ -1030,207 +1432,89 @@ about the game. Be playful, creative, and encouraging!`,
           description: 'The ID of the box to open (e.g., "box1234567890")'
         }
       },
-      elementPath: [],  // Emit from agent element itself
+      elementPath: [],
       emitEvent: {
         topic: 'agent:game-action',
         payloadTemplate: {
           action: 'open-box',
           args: ['{{boxId}}'],
           user: 'agent',
-          channelId
+          channelId: this.config.channelId
         }
       }
     });
-  }
-}
 
-// ============================================================================
-// MAIN FUNCTION
-// ============================================================================
-
-async function runDiscordBoxGame() {
-  console.log('🎮 Starting Discord Box Game');
-  console.log('============================\n');
-
-  // Load configuration
-  const GUILD_ID = process.env.DISCORD_GUILD_ID;
-  const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID;
-
-  if (!GUILD_ID || !CHANNEL_ID) {
-    console.error('❌ Missing required environment variables:');
-    console.error('   DISCORD_GUILD_ID - Your Discord server ID');
-    console.error('   DISCORD_CHANNEL_ID - Channel to run the game in');
-    console.error('   ANTHROPIC_API_KEY - Your Anthropic API key');
-    console.error('   DISCORD_BOT_TOKEN - Your Discord bot token (for the AXON server)');
-    process.exit(1);
+    return agent;
   }
 
-  // Create core system
-  const veilState = new VEILStateManager();
-  const space = new Space(veilState);
-  const llmProvider = createLLMProvider();
-
-  // Set up debug server if enabled
-  const debugEnabled = process.env.DEBUG_SERVER_ENABLED === 'true';
-  let debugServer: DebugServer | undefined;
-
-  if (debugEnabled) {
-    debugServer = new DebugServer(space, {
-      enabled: true,
-      port: 3015,
-      host: '127.0.0.1',
-      maxFrames: 200
-    });
-    debugServer.start();
-    console.log('🔍 Debug UI available at http://localhost:3015\n');
-  }
-
-  // Create main game element
-  const gameElement = new Element('discord-box-game', 'discord-box-game');
-  space.addChild(gameElement);
-
-  // Create Discord connection element
-  console.log('🔌 Creating Discord connection...');
-  const discordElement = new Element('discord', 'discord-connection');
-  const axonLoader = new AxonLoaderComponent();
-  discordElement.addComponent(axonLoader);
-  space.addChild(discordElement);
-
-  // Receptor to initialize Discord when AXON module loads
-  class DiscordInitReceptor implements Receptor {
-    topics = ['axon:module-loaded'];
-
-    async mount() {}
-    async unmount() {}
-
-    transform(event: SpaceEvent, state: ReadonlyVEILState): VEILDelta[] {
-      const payload = event.payload as any;
-
-      // Only respond to Discord afferent module
-      if (payload.module === 'discord-afferent') {
-        console.log('📡 Discord Afferent module loaded, triggering connection...');
-
-        // Create an init facet that the Discord effector will see
-        return [addFacet({
-          id: `discord-init-${Date.now()}`,
-          type: 'init',
-          content: 'Initialize Discord connection',
-          timestamp: Date.now(),
-          streamId: 'system:discord'
-        })];
-      }
-
-      return [];
-    }
-  }
-
-  // Create a receptor to wait for Discord connection
-  class DiscordConnectionReceptor implements Receptor {
-    topics = ['discord:connected'];
-    private resolver?: () => void;
-
-    async mount() {}
-    async unmount() {}
-
-    transform(event: SpaceEvent, state: ReadonlyVEILState): VEILDelta[] {
-      console.log('✅ Discord connected!\n');
-      if (this.resolver) {
-        this.resolver();
-      }
-      return [
-        addFacet(createEventFacet({
-          id: `discord-connection-${Date.now()}`,
-          content: 'Discord connection established',
-          source: 'discord',
-          eventType: 'connection',
-          streamId: 'discord:system'
-        }))
-      ];
-    }
-
-    waitForConnection(): Promise<void> {
-      return new Promise(resolve => {
-        this.resolver = resolve;
-      });
-    }
-  }
-
-  const initReceptor = new DiscordInitReceptor();
-  space.addReceptor(initReceptor);
-
-  const connectionReceptor = new DiscordConnectionReceptor();
-  space.addReceptor(connectionReceptor);
-
-  // Connect to Discord AXON server with discord-afferent module
-  const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || "";
-  const axonUrl = `axon://localhost:8080/modules/discord-afferent/manifest?host=localhost:8081&path=/ws&guild=${GUILD_ID}&agent=box-game-bot&token=${encodeURIComponent(DISCORD_BOT_TOKEN)}`;
-
-  // Start waiting BEFORE connecting so resolver is set when event fires
-  const waitPromise = connectionReceptor.waitForConnection();
-  await axonLoader.connect(axonUrl);
-  await waitPromise;
-
-  // Set up RETM pipeline BEFORE emitting actions
-  console.log('🔧 Setting up RETM architecture...');
-
-  // Receptors
-  space.addReceptor(new DiscordSlashReceptor());
-  space.addReceptor(new DiscordButtonReceptor());
-  space.addReceptor(new DiscordMessageReceptor()); // Handle regular Discord messages
-  space.addReceptor(new AgentGameActionReceptor()); // Handle agent tool use for creating/opening boxes
-  space.addReceptor(new BoxGameReceptor());
-
-  // Transforms
-  space.addTransform(new DiscordStatusTransform());
-  space.addTransform(new AgentContextTransform());
-  space.addTransform(new AgentActivationTransform());
-  space.addTransform(new AgentSpeechToDiscordTransform(CHANNEL_ID)); // Route agent speech to Discord and create send actions
-  space.addTransform(new ContextTransform(veilState));
-
-  // Effectors
-  space.addEffector(new BoxGameEffector());
-  space.addEffector(new DiscordAfferentEffector(discordElement, CHANNEL_ID)); // Sends typing indicators and controls discord-afferent
-
-  // Create AI agent
-  console.log('🤖 Creating AI agent...');
-  const agent = new BoxGameAgent(llmProvider, veilState, CHANNEL_ID);
-  const agentElement = new Element('agent', 'box-game-agent');
-  const agentComponent = new AgentComponent(agent);
-  agentElement.addComponent(agentComponent);
-  space.addChild(agentElement);
-
-  // Add agent effector
-  const agentEffector = new AgentEffector(agentElement, agent);
-  space.addEffector(agentEffector);
-
-  // Add tool instructions as ambient facet for agent
-  await space.emit({
-    topic: 'veil:operation',
-    source: space.getRef(),
-    payload: {
-      operation: {
-        type: 'addFacet',
-        facet: {
-          id: 'box-game-tool-instructions',
-          type: 'ambient',
-          scopes: ['agent-rendered-context'],
-          content: `<tool_instructions>
+  private async addToolInstructions(space: Space): Promise<void> {
+    await space.emit({
+      topic: 'veil:operation',
+      source: space.getRef(),
+      payload: {
+        operation: {
+          type: 'addFacet',
+          facet: {
+            id: 'box-game-tool-instructions',
+            type: 'ambient',
+            scopes: ['agent-rendered-context'],
+            content: `<tool_instructions>
 Available Actions:
-- @box.create("item1,item2,item3") - Create a box with items
-- @box.open("boxId") - Open an existing box
+- {@box.create("item1,item2,item3")} - Create a box with items
+- {@box.open("boxId")} - Open an existing box
 
 Examples:
-"Let me create that! @box.create("stars,magic,dreams")"
-"I'll open it! @box.open("box1234567890")"
+"Let me create that! {@box.create("stars,magic,dreams")}"
+"I'll open it! {@box.open("box1234567890")}"
 </tool_instructions>`
+          }
         }
-      }
-    },
-    timestamp: Date.now()
-  });
+      },
+      timestamp: Date.now()
+    });
+  }
 
-  // Helper function to create action facets for Discord commands
-  const executeDiscordAction = async (action: string, params: any) => {
+  private async setupDiscordCommands(space: Space): Promise<void> {
+    console.log('📝 Registering slash commands...');
+
+    await this.executeDiscordAction(space, 'registerSlashCommand', {
+      commandName: 'create-box',
+      description: 'Create a mystery box with items',
+      options: [{
+        name: 'items',
+        description: 'Comma-separated items (e.g., "sword,potion,treasure")',
+        type: 'string',
+        required: true
+      }]
+    });
+
+    await this.executeDiscordAction(space, 'registerSlashCommand', {
+      commandName: 'open-box',
+      description: 'Open a mystery box to reveal its contents',
+      options: [{
+        name: 'box-id',
+        description: 'The ID of the box to open (e.g., "box1234567890")',
+        type: 'string',
+        required: true
+      }]
+    });
+
+    await this.executeDiscordAction(space, 'registerSlashCommand', {
+      commandName: 'box-status',
+      description: 'Show current box game status with all boxes and recent activity'
+    });
+
+    await this.executeDiscordAction(space, 'registerSlashCommand', {
+      commandName: 'box-start',
+      description: 'Start the box game and show the status'
+    });
+
+    // Join the channel
+    console.log('🚪 Joining Discord channel...');
+    await this.executeDiscordAction(space, 'join', { channelId: this.config.channelId });
+  }
+
+  private async executeDiscordAction(space: Space, action: string, params: any): Promise<void> {
     await space.emit({
       topic: 'veil:operation',
       source: space.getRef(),
@@ -1241,7 +1525,7 @@ Examples:
             id: `discord-action-${action}-${Date.now()}`,
             type: 'action',
             scopes: ['ephemeral'],
-            agentId: 'system', // Add agentId to avoid VEIL warnings
+            agentId: 'system',
             state: {
               metadata: {
                 action: `discord:${action}`,
@@ -1255,108 +1539,79 @@ Examples:
       timestamp: Date.now()
     });
 
-    // Give time for event processing
     await new Promise(resolve => setTimeout(resolve, 100));
-  };
-
-  // Register slash commands
-  console.log('📝 Registering slash commands...');
-  await executeDiscordAction('registerSlashCommand', {
-    commandName: 'create-box',
-    description: 'Create a mystery box with items',
-    options: [{
-      name: 'items',
-      description: 'Comma-separated items (e.g., "sword,potion,treasure")',
-      type: 'string',
-      required: true
-    }]
-  });
-
-  await executeDiscordAction('registerSlashCommand', {
-    commandName: 'open-box',
-    description: 'Open a mystery box to reveal its contents',
-    options: [{
-      name: 'box-id',
-      description: 'The ID of the box to open (e.g., "box1234567890")',
-      type: 'string',
-      required: true
-    }]
-  });
-
-  await executeDiscordAction('registerSlashCommand', {
-    commandName: 'box-status',
-    description: 'Show current box game status with all boxes and recent activity'
-  });
-
-  await executeDiscordAction('registerSlashCommand', {
-    commandName: 'box-start',
-    description: 'Start the box game and show the status'
-  });
-
-  // Join the channel
-  console.log('🚪 Joining Discord channel...');
-  await executeDiscordAction('join', { channelId: CHANNEL_ID });
-
-  // Send welcome message
-  await executeDiscordAction('send', {
-    channelId: CHANNEL_ID,
-    message: '🎮 **Box Game is now active!**\n\nUse `/create-box` to create a mystery box and `/open-box` to reveal its contents!\nUse `/box-status` to see all boxes and recent activity.'
-  });
-
-  console.log('\n✅ Discord Box Game is running!');
-  console.log('   Use /create-box and /open-box to play');
-  console.log('   Use /box-status or /box-start to view game state');
-  if (debugEnabled) {
-    console.log(`   Debug UI: http://localhost:3015`);
   }
-  console.log('\nPress Ctrl+C to stop\n');
-
-  // Keep alive
-  await new Promise(() => {}); // Run forever
-}
-
-function createLLMProvider(): LLMProvider {
-  const useMock = process.env.USE_MOCK_LLM === 'true';
-
-  if (useMock) {
-    console.log('🤖 Using Mock LLM (USE_MOCK_LLM=true)');
-    const mock = new MockLLMProvider();
-    mock.setResponses([
-      "Ooh, a new mystery box! I wonder what treasures are hidden inside...",
-      "Amazing! What a wonderful discovery! 🎉",
-      "This box game is so much fun! Let's create more mysteries!",
-      "I'm so curious about what's in that box!",
-      "Wow, that's an interesting combination of items!"
-    ]);
-    return mock;
-  }
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    console.error('❌ ANTHROPIC_API_KEY not set. Use USE_MOCK_LLM=true or set your API key.');
-    process.exit(1);
-  }
-
-  console.log('🤖 Using Anthropic Claude');
-  return new AnthropicProvider({
-    apiKey,
-    defaultModel: 'claude-sonnet-4-20250514',
-    defaultMaxTokens: 250,
-    maxRetries: 3,
-    retryDelay: 1000
-  });
 }
 
 // ============================================================================
-// ENTRY POINT
+// MAIN ENTRY POINT
 // ============================================================================
 
+async function main() {
+  const discordBotToken = process.env.DISCORD_BOT_TOKEN;
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+  const guildId = process.env.GUILD_ID || '966069488137158676';
+  const channelId = process.env.CHANNEL_ID || '966069488137158679';
+
+  if (!discordBotToken) {
+    throw new Error('DISCORD_BOT_TOKEN environment variable is required');
+  }
+  if (!anthropicApiKey) {
+    throw new Error('ANTHROPIC_API_KEY environment variable is required');
+  }
+
+  // Create LLM provider
+  const { AnthropicProvider } = await import('../src/llm/anthropic-provider');
+  const llmProvider = new AnthropicProvider({
+    apiKey: anthropicApiKey,
+    defaultModel: 'claude-3-5-sonnet-20241022'
+  });
+
+  // Create application
+  const app = new BoxGameDiscordApplication({
+    guildId,
+    channelId,
+    discordBotToken,
+    llmProvider
+  });
+
+  // Create and start host
+  const { ConnectomeHost } = await import('../src/host/host');
+  const host = new ConnectomeHost({
+    persistence: {
+      enabled: true,
+      storageDir: './box-game-discord-state',
+      snapshotInterval: 1000
+    },
+    debug: {
+      enabled: true,
+      port: 3015
+    },
+    providers: {
+      'llm.primary': llmProvider
+    },
+    secrets: {
+      'discord.token': discordBotToken
+    },
+    reset: process.argv.includes('--reset')
+  });
+
+  const space = await host.start(app);
+
+  // Handle shutdown
+  process.on('SIGINT', async () => {
+    console.log('\n⚠️  Received SIGINT, shutting down gracefully...');
+    await host.stop();
+    process.exit(0);
+  });
+
+  console.log('✨ Box Game is running! Press Ctrl+C to stop.\n');
+}
+
+// Run if this is the main module
 if (require.main === module) {
-  runDiscordBoxGame().catch(error => {
-    console.error('❌ Game failed to start:', error);
+  main().catch(error => {
+    console.error('❌ Failed to start Box Game:', error);
     process.exit(1);
   });
 }
-
-export { runDiscordBoxGame, BoxGameAgent };
-

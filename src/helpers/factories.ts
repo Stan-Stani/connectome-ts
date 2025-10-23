@@ -401,7 +401,7 @@ export function createAgentActivation(
   } = {}
 ): AgentActivationFacet {
   const { id, priority = 'normal', sourceAgentId, ...extraState } = options;
-  
+
   const facet: AgentActivationFacet = {
     id: id || friendlyId('activation'),
     type: 'agent-activation',
@@ -409,14 +409,15 @@ export function createAgentActivation(
       reason,
       priority,
       ...(sourceAgentId ? { sourceAgentId } : {}),
-      ...extraState
+      // Nest extra state under metadata for consistent access pattern
+      ...(Object.keys(extraState).length > 0 ? { metadata: extraState } : {})
     },
     ephemeral: true
   };
-  
+
   // Validate before returning
   validateFacet(facet, 'agent-activation', { context: 'createAgentActivation' });
-  
+
   return facet;
 }
 
