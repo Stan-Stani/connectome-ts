@@ -42,15 +42,16 @@ export class ElementRequestReceptor extends BaseReceptor {
     
     switch (event.topic) {
       case 'element:create': {
-        const payload = event.payload as { 
+        const payload = event.payload as {
           parentId?: string;
           elementType?: string;
+          elementId?: string;
           name: string;
           components?: Array<{ type: string; config?: any }>;
           continuations?: any[];
           continuationTag?: string;
         };
-        
+
         // Create a request facet that the maintainer will process
         facets.push({
           id: `element-request-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
@@ -58,6 +59,7 @@ export class ElementRequestReceptor extends BaseReceptor {
           state: {
             parentId: payload.parentId || 'root',
             elementType: payload.elementType || 'Element',
+            elementId: payload.elementId,  // Pass through explicit elementId
             name: payload.name,
             components: payload.components,
             continuations: payload.continuations,  // Pass through continuations!
@@ -331,13 +333,13 @@ export class ElementTreeMaintainer extends BaseMaintainer {
   }
   
   private createElement(facet: Facet, events: SpaceEvent[], deltas: import('../veil/types').VEILDelta[]): void {
-    const { parentId, elementType, name, components, continuationTag, continuations } = facet.state as any;
-    
+    const { parentId, elementType, elementId: requestedElementId, name, components, continuationTag, continuations } = facet.state as any;
+
     // Find parent
     const parent = this.elementCache.get(parentId || 'root');
             if (!parent) {
               console.error(`Parent element ${parentId} not found`);
-      
+
       // Emit failure continuation if tag exists
       if (continuationTag) {
         events.push({
@@ -363,9 +365,9 @@ export class ElementTreeMaintainer extends BaseMaintainer {
       }
       return;
     }
-    
-    // Create element
-    const elementId = `${name}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+
+    // Create element (use provided ID or generate one)
+    const elementId = requestedElementId || `${name}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
     const element = new Element(name, elementId);
     this.elementCache.set(elementId, element);
     
