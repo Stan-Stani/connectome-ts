@@ -597,13 +597,13 @@ export class ElementTreeMaintainer extends BaseMaintainer {
       return;
     }
     
-    const component = ComponentRegistry.create(componentType);
+    const component = ComponentRegistry.create(componentType, config);
     if (!component) {
       console.warn(`[ElementTreeMaintainer] Failed to create component ${componentType}`);
       return;
     }
-    
-    // Apply config properties to component
+
+    // Apply config properties to component (for components that don't accept constructor config)
     if (config) {
       Object.assign(component, config);
     }

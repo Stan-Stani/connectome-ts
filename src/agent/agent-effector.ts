@@ -37,11 +37,18 @@ export class AgentEffector extends BaseEffector {
     { type: 'agent-activation' },
     { type: 'rendered-context' }
   ];
-  
+
   private agent?: AgentInterface;
   private processingActivations = new Set<string>();
   private tracer?: TraceStorage;
   private cachedAgentId?: string;
+  private config?: { agentElementId?: string };
+
+  constructor(config?: { agentElementId?: string }) {
+    super();
+    this.config = config;
+    console.log('[AgentEffector] constructor called with config:', config);
+  }
   
   async onMount(): Promise<void> {
     this.tracer = getGlobalTracer();
@@ -53,7 +60,7 @@ export class AgentEffector extends BaseEffector {
 
     // Get agent from element (injected via config.agentElementId)
     const space = this.element?.findSpace();
-    const config = (this as any).config || {};
+    const config = this.config || {};
     const agentElementId = config.agentElementId;
 
     console.log(`[AgentEffector.findAgent] Looking for agent with ID: ${agentElementId}`);
