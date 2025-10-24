@@ -72,7 +72,17 @@ export class AxonLoaderComponent extends Component {
   
   @persistent()
   private loadedExports: string[] = [];
-  
+
+  /**
+   * Constructor - accepts optional config for declarative element creation
+   */
+  constructor(config?: { axonUrl?: string }) {
+    super();
+    if (config?.axonUrl) {
+      this.axonUrl = config.axonUrl;
+    }
+  }
+
   /**
    * Called when component is first created
    */
