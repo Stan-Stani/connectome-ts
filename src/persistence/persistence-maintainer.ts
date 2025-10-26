@@ -39,11 +39,13 @@ export class PersistenceMaintainer extends BaseMaintainer {
     
     // Check if we need a snapshot
     const snapshotInterval = this.config.snapshotInterval || 100;
-    if (frame.sequence - this.lastSnapshotSequence >= snapshotInterval) {
-      this.createSnapshot(frame.sequence).catch(err => {
+    const currentSequence = this.veilState.getState().currentSequence;
+    if (currentSequence - this.lastSnapshotSequence >= snapshotInterval) {
+      // Snapshot the CURRENT state (which is one frame behind during Phase 4)
+      this.createSnapshot(currentSequence).catch(err => {
         console.error('[PersistenceMaintainer] Failed to create snapshot:', err);
       });
-      this.lastSnapshotSequence = frame.sequence;
+      this.lastSnapshotSequence = currentSequence;
     }
     
     // Clear element operations after snapshot
@@ -55,10 +57,29 @@ export class PersistenceMaintainer extends BaseMaintainer {
   }
   
   private async saveDelta(frame: Frame, sequence: number): Promise<void> {
+    // Create a minimal frame representation for delta storage
+    // We only need deltas, sequence, and timestamp - not events or transition data
+    const minimalFrame: Frame = {
+      sequence: frame.sequence,
+      timestamp: frame.timestamp,
+      uuid: frame.uuid,
+      events: [],  // Events not needed for replay
+      deltas: frame.deltas,
+      transition: {
+        sequence: frame.transition.sequence,
+        timestamp: frame.transition.timestamp,
+        elementOps: [],  // Element ops tracked separately
+        componentOps: [],
+        componentChanges: [],
+        veilOps: []
+      }
+    };
+    
     const delta: FrameDelta = {
       sequence,
       timestamp: frame.timestamp,
-      frame,
+      lifecycleId: this.space.lifecycleId,  // Tag with current lifecycle
+      frame: minimalFrame,
       elementOperations: [...this.elementOperations]
     };
     
@@ -70,30 +91,27 @@ export class PersistenceMaintainer extends BaseMaintainer {
     // Get the full state
     const state = this.veilState.getState();
     
-    // Serialize element tree if we have access to space
-    let elementTree;
-    if (this.space) {
-      elementTree = serializeElement(this.space);
-    } else {
-      // Fallback to empty tree
-      elementTree = {
-        id: 'root',
-        name: 'root',
-        type: 'Space',
-        active: true,
-        subscriptions: [],
-        components: [],
-        children: []
-      };
-    }
+    // Element tree is now fully stored in element-tree facets within VEIL
+    // No need for separate elementTree serialization
+    const elementTree = {
+      id: this.space.id,
+      name: 'root',
+      type: 'Space',
+      active: true,
+      subscriptions: [],
+      components: [],
+      children: []
+    };
     
     // Create snapshot
     const snapshot: PersistenceSnapshot = {
       version: 1,
       timestamp: new Date().toISOString(),
       sequence,
+      lifecycleId: this.space.lifecycleId,  // Tag with current lifecycle
+      spaceId: this.space.id,                // Stable Space ID
       veilState: serializeVEILState(state),
-      elementTree,
+      elementTree, // Minimal - only for backward compatibility
       metadata: {
         facetCount: state.facets.size,
         streamCount: state.streams.size,
