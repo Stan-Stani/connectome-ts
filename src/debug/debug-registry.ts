@@ -1,0 +1,107 @@
+/**
+ * Global debug registry for runtime introspection via Node inspector
+ * Only enabled when Node.js is launched with --inspect flag
+ */
+
+import { ConnectomeHost } from '../host/host';
+import { Space } from '../spaces/space';
+import { VEILStateManager } from '../veil/veil-state';
+import { DebugServer } from './debug-server';
+import { BasicAgent } from '../agent/basic-agent';
+import * as inspector from 'inspector';
+
+interface DebugRegistry {
+  host?: ConnectomeHost;
+  space?: Space;
+  veilState?: VEILStateManager;
+  debugServer?: DebugServer;
+  agents?: Map<string, BasicAgent>;
+}
+
+const registry: DebugRegistry = {};
+
+/**
+ * Check if Node.js inspector is active
+ */
+function isInspectorActive(): boolean {
+  // Method 1: Check if inspector URL is available
+  const inspectorUrl = inspector.url();
+  if (inspectorUrl !== undefined) {
+    return true;
+  }
+
+  // Method 2: Check process.execArgv for --inspect flags
+  const hasInspectFlag = process.execArgv.some(arg =>
+    arg.includes('--inspect') || arg.includes('--inspect-brk')
+  );
+
+  return hasInspectFlag;
+}
+
+/**
+ * Initialize the debug registry if inspector is active
+ */
+function initRegistry(): void {
+  if (!isInspectorActive()) {
+    return;
+  }
+
+  (global as any).__connectome_debug = registry;
+  console.log('🔍 Inspector detected - Debug registry enabled');
+  console.log('   Access via: global.__connectome_debug');
+  console.log(`   Inspector URL: ${inspector.url()}`);
+}
+
+export function registerDebugHost(host: ConnectomeHost): void {
+  if (!isInspectorActive()) {
+    return;
+  }
+
+  initRegistry();
+  registry.host = host;
+  console.log('   ✓ Host registered');
+}
+
+export function registerDebugSpace(space: Space): void {
+  if (!isInspectorActive()) {
+    return;
+  }
+
+  initRegistry();
+  registry.space = space;
+  registry.veilState = space.getVEILStateManager();
+  console.log('   ✓ Space and VEILState registered');
+}
+
+export function registerDebugServer(debugServer: DebugServer): void {
+  if (!isInspectorActive()) {
+    return;
+  }
+
+  initRegistry();
+  registry.debugServer = debugServer;
+  console.log('   ✓ DebugServer registered');
+}
+
+export function registerDebugAgent(agentId: string, agent: BasicAgent): void {
+  if (!isInspectorActive()) {
+    return;
+  }
+
+  initRegistry();
+  if (!registry.agents) {
+    registry.agents = new Map();
+  }
+  registry.agents.set(agentId, agent);
+}
+
+export function getDebugRegistry(): Readonly<DebugRegistry> {
+  return registry;
+}
+
+/**
+ * Check if debug registry is active
+ */
+export function isDebugRegistryActive(): boolean {
+  return isInspectorActive();
+}

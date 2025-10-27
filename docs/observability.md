@@ -1,15 +1,29 @@
-# Observability System
+# Observability and Debugging System
 
-The Connectome Lite system includes a comprehensive observability and tracing system that captures all internal operations, including full LLM request/response logs.
+The Connectome framework includes comprehensive observability and debugging capabilities through three integrated systems:
+
+1. **Tracing System** - File-based persistence of all operations and LLM interactions
+2. **Connectome Debug MCP** - Application-level state inspection and control
+3. **Node.js Inspector MCP** - Runtime-level debugging with breakpoints and step-through
 
 ## Overview
 
-The observability system provides:
+### Tracing System
+
+The tracing system provides:
 - **File-based persistence** of all traces
 - **Full LLM interaction capture** including requests, responses, and errors
 - **Structured logging** with categories, components, and operations
 - **Multiple export formats** (JSON, CSV, Markdown)
 - **Automatic log rotation** to manage disk space
+
+### Debug MCP Integration
+
+The debug systems provide:
+- **Application-level inspection** via Connectome debug MCP (port 3015)
+- **Runtime-level debugging** via Node.js inspector MCP (port 9229)
+- **Real-time state monitoring** of VEIL facets and frames
+- **Interactive debugging** with breakpoints and variable inspection
 
 ## Configuration
 

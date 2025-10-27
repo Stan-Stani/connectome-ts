@@ -83,6 +83,37 @@ Tag-based system for maintaining intent across asynchronous operations:
 - Completed operations emit continuation facets
 - Transforms process continuations to trigger follow-up actions
 
+## Debugging
+
+### Inspector Debug Registry
+
+When you launch with `--inspect`, Connectome automatically exposes a global debug registry:
+
+```bash
+node --inspect=9229 -r ts-node/register examples/test-debug-registry.ts
+```
+
+Access in Chrome DevTools, VS Code, or any debugger:
+```javascript
+global.__connectome_debug.space          // Root Space
+global.__connectome_debug.veilState      // VEILStateManager
+global.__connectome_debug.host           // ConnectomeHost
+global.__connectome_debug.debugServer    // DebugServer (if enabled)
+```
+
+**Full documentation:** See `DEBUG-REGISTRY.md`
+
+### Debug Server
+
+Enable the debug UI server:
+```typescript
+const host = new ConnectomeHost({
+  debug: { enabled: true, port: 3015 }
+});
+```
+
+Access at `http://localhost:3015` for real-time state inspection.
+
 ## Repository Setup
 
 ⚠️ **Important**: The Connectome ecosystem currently uses npm file links between repositories. All repos must be cloned into the same parent directory with their default names. This is a temporary limitation that will be resolved when packages are published to npm.

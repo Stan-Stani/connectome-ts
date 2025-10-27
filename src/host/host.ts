@@ -16,6 +16,7 @@ import { Component } from '../spaces/component';
 import { Element } from '../spaces/element';
 import { SpaceEvent } from '../spaces/types';
 import { restoreVEILState, restoreElementTree } from '../persistence/restoration';
+import { registerDebugHost, registerDebugSpace, registerDebugServer } from '../debug/debug-registry';
 
 export interface HostConfig {
   persistence?: {
@@ -36,6 +37,40 @@ export interface HostConfig {
   reset?: boolean;
 }
 
+/**
+ * Component to handle dynamic component loading events
+ */
+class HostHandlerComponent extends Component {
+  private host: ConnectomeHost;
+
+  constructor(host: ConnectomeHost) {
+    super();
+    this.host = host;
+  }
+
+  onMount(): void {
+    console.log('[Host Handler] Mounted and ready to handle dynamic component events');
+  }
+
+  async handleEvent(event: SpaceEvent): Promise<void> {
+    console.log(`[Host Handler] Received event: ${event.topic}`);
+    if (event.topic === 'axon:component-loaded') {
+      const payload = event.payload as { component: Component; componentClass: string };
+      const component = payload.component;
+      if (component) {
+        console.log(`🔌 Resolving references for dynamically loaded component: ${payload.componentClass}`);
+        await this.host.resolveComponentReferences(component);
+        await this.host.resolveExternalResources(component);
+
+        // Call onReferencesResolved if it exists
+        if ('onReferencesResolved' in component && typeof component.onReferencesResolved === 'function') {
+          component.onReferencesResolved();
+        }
+      }
+    }
+  }
+}
+
 export class ConnectomeHost {
   private config: HostConfig;
   private referenceRegistry = new Map<string, any>();
@@ -47,20 +82,23 @@ export class ConnectomeHost {
   
   constructor(config: HostConfig = {}) {
     this.config = config;
-    
+
+    // Register for debug access (only when --inspect is active)
+    registerDebugHost(this);
+
     // Register providers
     if (config.providers) {
       Object.entries(config.providers).forEach(([id, provider]) => {
         this.providers.set(id, provider);
         this.referenceRegistry.set(`provider:${id}`, provider);
-        
+
         // Also register common names for convenience
         if (id === 'llm.primary') {
           this.referenceRegistry.set('llmProvider', provider);
         }
       });
     }
-    
+
     // Register secrets
     if (config.secrets) {
       Object.entries(config.secrets).forEach(([id, secret]) => {
@@ -118,14 +156,17 @@ export class ConnectomeHost {
     }
     
     // Core services already registered in createFresh/restore
-    
+
+    // Register space for debug access (only when --inspect is active)
+    registerDebugSpace(space);
+
     // Set up persistence tracking if enabled
     if (this.config.persistence?.enabled) {
       // Create storage adapter (reused for loading deltas)
       this.storageAdapter = new (await import('../persistence/file-storage')).FileStorageAdapter(
         this.config.persistence.storageDir || './connectome-state'
       );
-      
+
       // Mount persistence maintainer (auto-registration handles the rest!)
       const persistenceMaintainer = new PersistenceMaintainer(veilState, space, {
         storagePath: this.config.persistence.storageDir || './connectome-state',
@@ -133,21 +174,22 @@ export class ConnectomeHost {
       });
       // Just mount - auto-registration happens automatically
       await space.addComponentAsync(persistenceMaintainer);
-      
+
       // TODO: TransitionManager disabled - using PersistenceMaintainer instead
       // this.transitionManager = new TransitionManager(space, veilState, {
       //   snapshotInterval: this.config.persistence.snapshotInterval || 100,
       //   storagePath: this.config.persistence.storageDir || './connectome-state'
       // });
-      
+
       // Note: Shutdown handler should be added by the application, not here
       // to avoid duplicate handlers
     }
-    
+
     // Start debug server if enabled
     if (this.config.debug?.enabled) {
       const port = this.config.debug.port || 3015;
       this.debugServer = new DebugServer(space, { port });
+      registerDebugServer(this.debugServer);
       await this.debugServer.start();
       console.log(`🔍 Debug UI available at http://localhost:${port}`);
     }
@@ -416,7 +458,7 @@ export class ConnectomeHost {
   /**
    * Resolve references for a component
    */
-  private async resolveComponentReferences(component: Component): Promise<void> {
+  public async resolveComponentReferences(component: Component): Promise<void> {
     const references = getReferenceMetadata(component);
     
     for (const ref of references) {
@@ -435,7 +477,7 @@ export class ConnectomeHost {
   /**
    * Resolve external resources for a component
    */
-  private async resolveExternalResources(component: Component): Promise<void> {
+  public async resolveExternalResources(component: Component): Promise<void> {
     const externals = getExternalMetadata(component);
     
     console.log(`Resolving ${externals.length} external resources for ${component.constructor.name}`);
@@ -568,30 +610,7 @@ export class ConnectomeHost {
       // Re-add the handler component if it's missing
       if (hostElement.components.length === 0) {
         console.log('[Host] Host handler has no components, adding handler component');
-        const host = this;
-        hostElement.addComponent(new class extends Component {
-          onMount(): void {
-            console.log('[Host Handler] Mounted and ready to handle dynamic component events (restored)');
-          }
-          
-          async handleEvent(event: SpaceEvent): Promise<void> {
-            console.log(`[Host Handler] Received event: ${event.topic}`);
-            if (event.topic === 'axon:component-loaded') {
-              const payload = event.payload as { component: Component; componentClass: string };
-              const component = payload.component;
-              if (component) {
-                console.log(`🔌 Resolving references for dynamically loaded component: ${payload.componentClass}`);
-                await host.resolveComponentReferences(component);
-                await host.resolveExternalResources(component);
-                
-                // Call onReferencesResolved if it exists
-                if ('onReferencesResolved' in component && typeof component.onReferencesResolved === 'function') {
-                  component.onReferencesResolved();
-                }
-              }
-            }
-          }
-        });
+        hostElement.addComponent(new HostHandlerComponent(this));
       }
       
       return;
@@ -599,31 +618,8 @@ export class ConnectomeHost {
     
     // Create new host handler
     console.log('[Host] Creating new host handler');
-    const host = this;
     hostElement = new Element('_host_handler');
-    hostElement.addComponent(new class extends Component {
-      onMount(): void {
-        console.log('[Host Handler] Mounted and ready to handle dynamic component events');
-      }
-      
-      async handleEvent(event: SpaceEvent): Promise<void> {
-        console.log(`[Host Handler] Received event: ${event.topic}`);
-        if (event.topic === 'axon:component-loaded') {
-          const payload = event.payload as { component: Component; componentClass: string };
-          const component = payload.component;
-          if (component) {
-            console.log(`🔌 Resolving references for dynamically loaded component: ${payload.componentClass}`);
-            await host.resolveComponentReferences(component);
-            await host.resolveExternalResources(component);
-            
-            // Call onReferencesResolved if it exists
-            if ('onReferencesResolved' in component && typeof component.onReferencesResolved === 'function') {
-              component.onReferencesResolved();
-            }
-          }
-        }
-      }
-    });
+    hostElement.addComponent(new HostHandlerComponent(this));
     space.addChild(hostElement);
     
     // Subscribe to axon component loaded events at both space and element level
