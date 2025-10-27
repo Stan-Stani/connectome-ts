@@ -122,6 +122,9 @@ export class Space extends Element {
   // Restoration mode - suppresses event processing during state restoration
   private isRestoring: boolean = false;
   
+  // Queue checker timer
+  private queueCheckerTimer?: NodeJS.Timeout;
+  
   constructor(veilState: VEILStateManager, hostRegistry?: Map<string, any>, lifecycleId?: string, spaceId?: string) {
     // Pass stable ID to Element constructor if provided (for restoration)
     super('root', spaceId);
@@ -137,6 +140,44 @@ export class Space extends Element {
     const veilOpReceptor = new VEILOperationReceptor();
     (veilOpReceptor as any).element = this; // Mount to Space
     this.addReceptor(veilOpReceptor);
+    
+    // Start queue checker timer to handle async events (like agent responses)
+    this.startQueueChecker();
+  }
+  
+  /**
+   * Start periodic queue checking for async events
+   */
+  private startQueueChecker(): void {
+    console.log('[Space] Starting queue checker timer (500ms interval)');
+    this.queueCheckerTimer = setInterval(() => {
+      try {
+        console.log('[Space.QueueChecker] Timer fired!');
+        // Only trigger if we have events and aren't currently processing
+        const queueLen = this.eventQueue.length;
+        const isProcessing = this.processingFrame;
+        
+        console.log(`[Space.QueueChecker] Queue: ${queueLen}, processing: ${isProcessing}`);
+        
+        if (!isProcessing && queueLen > 0) {
+          console.log(`[Space.QueueChecker] Triggering frame for ${queueLen} queued events`);
+          setImmediate(() => this.processFrame());
+        }
+      } catch (error) {
+        console.error('[Space.QueueChecker] Error in timer:', error);
+      }
+    }, 500); // Check every 500ms
+    console.log('[Space] Queue checker timer started, id:', this.queueCheckerTimer);
+  }
+  
+  /**
+   * Stop queue checker (for cleanup)
+   */
+  private stopQueueChecker(): void {
+    if (this.queueCheckerTimer) {
+      clearInterval(this.queueCheckerTimer);
+      this.queueCheckerTimer = undefined;
+    }
   }
   
   /**
@@ -369,9 +410,11 @@ export class Space extends Element {
   queueEvent(event: SpaceEvent): void {
     // Suppress event processing during restoration
     if (this.isRestoring) {
+      console.log(`[Space.queueEvent] Suppressed during restoration: ${event.topic}`);
       return;
     }
     
+    console.log(`[Space.queueEvent] Queuing ${event.topic}, queue was ${this.eventQueue.length}, processing=${this.processingFrame}`);
     this.eventQueue.push(event);
     
     this.tracer?.record({
@@ -400,8 +443,13 @@ export class Space extends Element {
   /**
    * Override emit to handle events at the space level
    */
-  emit(event: SpaceEvent): void {
-    this.queueEvent(event);
+  emit(event: SpaceEvent | Omit<SpaceEvent, 'source'>): void {
+    console.log(`[Space.emit] Called for topic: ${event.topic}`);
+    const fullEvent: SpaceEvent = 'source' in event ? event : {
+      ...event,
+      source: this.getRef()
+    } as SpaceEvent;
+    this.queueEvent(fullEvent);
   }
   
   /**

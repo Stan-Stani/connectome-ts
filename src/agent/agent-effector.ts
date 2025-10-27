@@ -232,8 +232,9 @@ export class AgentEffector extends BaseEffector {
 
         // Emit events first (they may trigger actions)
         for (const event of response.events) {
-          console.log(`[AgentEffector] Emitting agent event: ${event.topic}`);
+          console.log(`[AgentEffector] Emitting agent event: ${event.topic}`, event);
           this.element.emit(event);
+          console.log(`[AgentEffector] Event emitted, should be queued now`);
         }
 
         // Then emit facets for response
