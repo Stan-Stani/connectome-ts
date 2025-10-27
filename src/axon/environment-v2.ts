@@ -7,6 +7,7 @@
 import { Component } from '../spaces/component';
 import { VEILComponent, InteractiveComponent } from '../components/base-components';
 import { BaseAfferent } from '../components/base-afferent';
+import { BaseReceptor, BaseEffector, BaseTransform, BaseMaintainer } from '../components/base-martem';
 import { SpaceEvent } from '../spaces/types';
 import { persistent, persistable } from '../persistence/decorators';
 import { external } from '../host/decorators';
@@ -63,6 +64,12 @@ export function createAxonEnvironmentV2(): IAxonEnvironmentV2 {
     VEILComponent: VEILComponent as any,
     InteractiveComponent: InteractiveComponent as any,
     BaseAfferent: BaseAfferent as any,
+    
+    // RETM base component classes
+    BaseReceptor: BaseReceptor as any,
+    BaseEffector: BaseEffector as any,
+    BaseTransform: BaseTransform as any,
+    BaseMaintainer: BaseMaintainer as any,
     
     // Decorators
     persistent,

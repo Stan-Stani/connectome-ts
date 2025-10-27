@@ -179,6 +179,9 @@ export class BasicAgent implements AgentInterface {
     const cycleSpan = this.tracer?.startSpan('runCycle', 'BasicAgent');
     
     try {
+      // Discover tools from VEIL before each cycle
+      this.discoverToolsFromVEIL();
+      
       // Log context size
       this.tracer?.record({
         id: `llm-context-${Date.now()}`,
@@ -219,6 +222,8 @@ export class BasicAgent implements AgentInterface {
         }
       );
       
+      console.log(`[BasicAgent] LLM response content (${response.content.length} chars):`, response.content.substring(0, 200));
+      
       this.tracer?.record({
         id: `llm-response-${Date.now()}`,
         timestamp: Date.now(),
@@ -237,6 +242,8 @@ export class BasicAgent implements AgentInterface {
       
       // Parse the response
       const parsed = this.parseCompletion(response.content);
+      
+      console.log(`[BasicAgent] parseCompletion returned ${parsed.operations.length} operations`);
       
       this.tracer?.record({
         id: `parse-response-${Date.now()}`,
@@ -260,10 +267,20 @@ export class BasicAgent implements AgentInterface {
       const transition = createDefaultTransition(-1, timestamp);
       transition.veilOps = operations;
 
+      // Convert parsed events to SpaceEvents
+      const spaceEvents = (parsed.events || []).map(ev => ({
+        id: `agent-event-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        topic: ev.topic,
+        payload: ev.payload,
+        timestamp: Date.now(),
+        source: { elementId: 'agent', elementPath: [], elementType: 'Agent' },
+        phase: 'unknown' as const
+      }));
+
       const frame: Frame = {
         sequence: -1, // Placeholder - Space will assign proper sequence
         timestamp,
-        events: [],
+        events: spaceEvents,
         deltas: operations,
         transition
       };
@@ -286,6 +303,7 @@ export class BasicAgent implements AgentInterface {
   
   parseCompletion(completion: string): ParsedCompletion {
     const operations: OutgoingVEILOperation[] = [];
+    const events: Array<{ topic: string; payload: any }> = [];
     let hasMoreToSay = false;
     
     // The model outputs plain text without <my_turn> tags
@@ -363,13 +381,30 @@ export class BasicAgent implements AgentInterface {
       
       // Convert element action to action facet
       // Path like ['dispenser', 'dispense'] becomes toolName 'dispenser.dispense'
+      const toolName = pathParts.join('.');
       operations.push({
         type: 'addFacet',
         facet: this.createActionFacet(
-          pathParts.join('.'),
+          toolName,
           Object.keys(parameters).length > 0 ? parameters : {}
         )
       });
+      
+      // Emit element:action event ONLY if tool is registered (discovered from VEIL)
+      const tool = this.tools.get(toolName);
+      if (tool?.emitEvent) {
+        events.push({
+          topic: tool.emitEvent.topic,
+          payload: {
+            path: pathParts,
+            action: pathParts[pathParts.length - 1],
+            parameters: Object.keys(parameters).length > 0 ? parameters : {},
+            ...(tool.emitEvent.payloadTemplate || {})
+          }
+        });
+      } else {
+        console.warn(`[BasicAgent] Tool ${toolName} not registered - action will not execute`);
+      }
     }
     
     // Parse thoughts
@@ -440,7 +475,12 @@ export class BasicAgent implements AgentInterface {
       });
     }
     
-    return { operations, hasMoreToSay, rawContent: completion };
+    return { 
+      operations, 
+      events: events.length > 0 ? events : undefined,
+      hasMoreToSay, 
+      rawContent: completion 
+    };
   }
   
   handleCommand(command: AgentCommand): void {
@@ -558,6 +598,50 @@ export class BasicAgent implements AgentInterface {
       ignoringSources: new Set(this.state.ignoringSources),
       attentionThreshold: this.state.attentionThreshold
     };
+  }
+  
+  /**
+   * Discover tools from action-definition facets in VEIL
+   * This is how components declare their actions persistently
+   */
+  private discoverToolsFromVEIL(): void {
+    const veilState = this.veilStateManager.getState();
+    let discoveredCount = 0;
+    
+    console.log(`[BasicAgent] Scanning ${veilState.facets.size} facets for action-definitions...`);
+    
+    // Scan for action-definition facets
+    for (const [facetId, facet] of veilState.facets.entries()) {
+      if (facet.type === 'action-definition') {
+        console.log(`[BasicAgent] Found action-definition facet: ${facetId}`, facet);
+        const attrs = (facet as any).attributes || {};
+        const toolName = attrs.toolName || facetId;
+        
+        // Skip if already registered
+        if (this.tools.has(toolName)) continue;
+        
+        const elementId = attrs.elementId;
+        const actionName = attrs.actionName;
+        
+        // Register tool from VEIL facet
+        this.tools.set(toolName, {
+          name: toolName,
+          description: attrs.description || facet.content || `Call ${toolName}`,
+          parameters: attrs.parameters || {},
+          elementPath: elementId ? [elementId] : [],
+          emitEvent: {
+            topic: 'element:action',
+            payloadTemplate: {}
+          }
+        });
+        
+        discoveredCount++;
+      }
+    }
+    
+    if (discoveredCount > 0) {
+      console.log(`[BasicAgent] Discovered ${discoveredCount} tools from VEIL, total: ${this.tools.size}`);
+    }
   }
   
   /**

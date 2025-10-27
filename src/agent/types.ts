@@ -10,6 +10,7 @@ import { RenderedContext } from '../hud/types-v2';
  */
 export interface ParsedCompletion {
   operations: OutgoingVEILOperation[];
+  events?: Array<{ topic: string; payload: any }>;  // Events to emit for tool invocations
   hasMoreToSay: boolean;
   rawContent: string;
 }

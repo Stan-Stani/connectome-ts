@@ -52,21 +52,36 @@ export class ElementRequestReceptor extends BaseReceptor {
           continuationTag?: string;
         };
 
-        // Create a request facet that the maintainer will process
-        facets.push({
-          id: `element-request-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-          type: 'element-request',
-          state: {
-            parentId: payload.parentId || 'root',
-            elementType: payload.elementType || 'Element',
-            elementId: payload.elementId,  // Pass through explicit elementId
-            name: payload.name,
-            components: payload.components,
-            continuations: payload.continuations,  // Pass through continuations!
-            continuationTag: payload.continuationTag
-          },
-          ephemeral: true // Request is processed once
+        // Directly create element-tree facet (declarative)
+        // element-tree facet IS the declaration of what should exist
+        const elementId = payload.elementId || `${payload.name}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+        
+        deltas.push({
+          type: 'addFacet',
+          facet: {
+            id: `element-tree-${elementId}`,
+            type: 'element-tree',
+            state: {
+              elementId,
+              elementType: payload.elementType || 'Element',
+              parentId: payload.parentId || 'root',
+              name: payload.name,
+              active: true,
+              components: payload.components || [],
+              continuationTag: payload.continuationTag,
+              continuations: payload.continuations
+            }
+          }
         });
+        
+        // Also create event facet for history
+        facets.push(createEventFacet({
+          content: `Create element '${payload.name}' (ID: ${elementId})`,
+          source: 'element-tree',
+          eventType: 'element-create',
+          metadata: { elementId, name: payload.name, parentId: payload.parentId },
+          streamId: 'system'
+        }));
         break;
       }
       
@@ -253,13 +268,17 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     // Clear previous operations
     this.pendingOperations = [];
     
-    // Look for element-request facets from this frame
+    // Look for element-tree facets that don't have corresponding Elements yet
+    // This handles both fresh creation and restoration
     for (const [id, facet] of state.facets) {
-      if (facet.type === 'element-request') {
-        this.pendingOperations.push({
-          type: 'create',
-          facet
-        });
+      if (facet.type === 'element-tree') {
+        const elementState = facet.state as any;
+        if (!this.elementCache.has(elementState.elementId) && elementState.active) {
+          this.pendingOperations.push({
+            type: 'create',  // Both new and restored use same code path
+            facet
+          });
+        }
       }
       
       // Look for destroy requests
@@ -278,19 +297,6 @@ export class ElementTreeMaintainer extends BaseMaintainer {
         });
       }
     }
-    
-    // Look for element-tree facets that need syncing (restoration)
-    for (const [id, facet] of state.facets) {
-      if (facet.type === 'element-tree') {
-        const elementState = facet.state as any;
-        if (!this.elementCache.has(elementState.elementId) && elementState.active) {
-          this.pendingOperations.push({
-            type: 'restore',
-            facet
-          });
-        }
-      }
-    }
   }
   
   private processDeletions(events: SpaceEvent[]) {
@@ -306,20 +312,13 @@ export class ElementTreeMaintainer extends BaseMaintainer {
   }
   
   private processCreations(events: SpaceEvent[], deltas: import('../veil/types').VEILDelta[]) {
-    // Process restorations first (they have existing IDs)
-    const restorations = this.pendingOperations.filter(op => op.type === 'restore');
-    
-    // Sort by parent-child relationship
-    const sorted = this.sortByHierarchy(restorations);
-    
-    for (const restoration of sorted) {
-      this.restoreElement(restoration.facet!, events);
-    }
-    
-    // Then process new creations
+    // Get all create operations (both fresh and restored use same code path now)
     const creations = this.pendingOperations.filter(op => op.type === 'create');
     
-    for (const creation of creations) {
+    // Sort by parent-child relationship
+    const sorted = this.sortByHierarchy(creations);
+    
+    for (const creation of sorted) {
       this.createElement(creation.facet!, events, deltas);
     }
   }
@@ -366,50 +365,17 @@ export class ElementTreeMaintainer extends BaseMaintainer {
       return;
     }
 
-    // Create element (use provided ID or generate one)
-    const elementId = requestedElementId || `${name}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+    // element-tree facet already exists (created by Receptor)
+    // Just need to create the actual Element instance to match the facet
+    const elementId = requestedElementId;  // Already determined by Receptor
+    
+    console.log(`[ElementTreeMaintainer] Creating element ${name} (${elementId})`);
+    
     const element = new Element(name, elementId);
     this.elementCache.set(elementId, element);
     
     // Mount element - this will emit element:mount event (queued for next frame)
-            parent.addChild(element);
-    
-    // Create persistent element-tree facet
-    events.push({
-      topic: 'veil:operation',
-      source: element.getRef(),
-      timestamp: Date.now(),
-      payload: {
-        operation: {
-          type: 'addFacet',
-          facet: {
-            id: `element-tree-${elementId}`,
-            type: 'element-tree',
-            state: {
-              elementId,
-              elementType,
-              parentId: parent.id,
-              name,
-              active: true,
-              components: []
-            }
-          }
-        }
-      }
-    });
-    
-    // Remove the processed element-request facet
-    events.push({
-      topic: 'veil:operation',
-      source: element.getRef(),
-      timestamp: Date.now(),
-      payload: {
-        operation: {
-          type: 'removeFacet',
-          id: facet.id
-        }
-      }
-    });
+    parent.addChild(element);
     
     // Emit success continuation if tag exists
     if (continuationTag || continuations) {
@@ -444,8 +410,13 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     if (components) {
       const componentStates: any[] = [];
       for (const compDef of components) {
-        const component = ComponentRegistry.create(compDef.type, compDef.config);
+        const component = ComponentRegistry.create(compDef.type);
         if (component) {
+          // Apply config properties to component
+          if (compDef.config) {
+            Object.assign(component, compDef.config);
+          }
+          
           // Create component-state BEFORE adding component (so onMount() can read it)
           const componentIndex = element.components.length;
           const componentId = `${elementId}:${compDef.type}:${componentIndex}`;
@@ -475,8 +446,24 @@ export class ElementTreeMaintainer extends BaseMaintainer {
           // Now add component (onMount() can read component-state)
             element.addComponent(component);
           
-          // Register if it's a RETM component
+          // Get componentClass for RETM registration and event
           const componentClass = (compDef as any).componentClass;
+          
+          // Emit component:mounted event for receptors that need to react to component creation
+          // This only fires on INITIAL creation, not restoration (so action-definition facets are created once)
+          events.push({
+            topic: 'component:mounted',
+            source: element.getRef(),
+            payload: {
+              elementId,
+              componentType: compDef.type,
+              componentClass,
+              config: compDef.config || {}
+            },
+            timestamp: Date.now()
+          });
+          
+          // Register if it's a RETM component
           if (componentClass === 'effector' && space.addEffector) {
             space.addEffector(component);
           } else if (componentClass === 'receptor' && space.addReceptor) {
@@ -493,56 +480,12 @@ export class ElementTreeMaintainer extends BaseMaintainer {
         }
       }
       
-      // Update element-tree facet with all components at once
-      if (componentStates.length > 0) {
-        events.push({
-          topic: 'veil:operation',
-          source: element.getRef(),
-          timestamp: Date.now(),
-          payload: {
-            operation: {
-              type: 'rewriteFacet',
-              id: `element-tree-${elementId}`,
-              changes: {
-                state: { components: componentStates }
-              }
-            }
-          }
-        });
-      }
+      // element-tree facet already has the components list (created by Receptor)
+      // No need to update it again here
     }
   }
   
-  private restoreElement(facet: Facet, events: SpaceEvent[]): void {
-    const { elementId, elementType, parentId, name, components } = facet.state as any;
-    
-    // Skip if element already exists
-    if (this.elementCache.has(elementId)) {
-      return;
-    }
-    
-    // Find parent
-    const parent = parentId ? this.elementCache.get(parentId) : null;
-    if (!parent) {
-      console.error(`Parent element ${parentId} not found for ${elementId}`);
-      return;
-    }
-    
-    // Create element with existing ID
-    const element = new Element(name, elementId);
-    this.elementCache.set(elementId, element);
-    
-    // Mount element - events will be queued for next frame
-    parent.addChild(element);
-    
-    // Add components
-    for (const compDef of components || []) {
-      const component = ComponentRegistry.create(compDef.type, compDef.config);
-      if (component) {
-        element.addComponent(component);
-      }
-    }
-  }
+  // restoreElement() removed - now using unified createElement() for both fresh and restored elements
   
   private deleteElement(elementId: string, events: SpaceEvent[]): void {
     const element = this.elementCache.get(elementId);
@@ -597,15 +540,21 @@ export class ElementTreeMaintainer extends BaseMaintainer {
       return;
     }
     
-    const component = ComponentRegistry.create(componentType, config);
+    const component = ComponentRegistry.create(componentType);
     if (!component) {
       console.warn(`[ElementTreeMaintainer] Failed to create component ${componentType}`);
       return;
     }
 
-    // Apply config properties to component (for components that don't accept constructor config)
+    // Apply config properties to component
     if (config) {
+      console.log(`[ElementTreeMaintainer] Applying config to ${componentType}:`, config);
       Object.assign(component, config);
+      console.log(`[ElementTreeMaintainer] After Object.assign, component properties:`, {
+        channels: (component as any).channels,
+        discordElementId: (component as any).discordElementId,
+        agentElementId: (component as any).agentElementId
+      });
     }
     
     console.log(`[ElementTreeMaintainer] Creating component ${componentType} for element ${elementId}`);
@@ -637,6 +586,19 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     // RETM components (receptors, transforms, effectors, maintainers) with Space.
     // No need for manual registration here!
     element.addComponent(component);
+    
+    // Emit component:mounted event for receptors to react to
+    events.push({
+      topic: 'component:mounted',
+      source: element.getRef(),
+      payload: {
+        elementId,
+        componentType,
+        componentClass: componentClass || 'component',
+        config: config || {}
+      },
+      timestamp: Date.now()
+    });
   }
   
   // Helper methods for sorting

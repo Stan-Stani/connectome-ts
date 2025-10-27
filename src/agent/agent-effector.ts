@@ -42,14 +42,7 @@ export class AgentEffector extends BaseEffector {
   private processingActivations = new Set<string>();
   private tracer?: TraceStorage;
   private cachedAgentId?: string;
-  private config?: { agentElementId?: string };
 
-  constructor(config?: { agentElementId?: string }) {
-    super();
-    this.config = config;
-    console.log('[AgentEffector] constructor called with config:', config);
-  }
-  
   async onMount(): Promise<void> {
     this.tracer = getGlobalTracer();
     // Agent lookup is lazy - happens in process() when first needed
@@ -58,10 +51,9 @@ export class AgentEffector extends BaseEffector {
   private findAgent(): void {
     if (this.agent) return; // Already found
 
-    // Get agent from element (injected via config.agentElementId)
+    // Config properties are set via Object.assign, read them directly
     const space = this.element?.findSpace();
-    const config = this.config || {};
-    const agentElementId = config.agentElementId;
+    const agentElementId = (this as any).agentElementId;
 
     console.log(`[AgentEffector.findAgent] Looking for agent with ID: ${agentElementId}`);
     console.log(`[AgentEffector.findAgent] Space children:`, space?.children.map(c => `${c.name}(${c.id})`));
@@ -84,8 +76,14 @@ export class AgentEffector extends BaseEffector {
     }
 
     if (!this.agent) {
-      const agentElement = space?.children.find(c => c.name === 'agent');
-      console.log(`[AgentEffector.findAgent] Fallback: Found element by name 'agent':`, !!agentElement);
+      // Try 'discord-agent' first, then 'agent' as ultimate fallback
+      let agentElement = space?.children.find(c => c.name === 'discord-agent');
+      console.log(`[AgentEffector.findAgent] Fallback: Found element by name 'discord-agent':`, !!agentElement);
+      
+      if (!agentElement) {
+        agentElement = space?.children.find(c => c.name === 'agent');
+        console.log(`[AgentEffector.findAgent] Fallback: Found element by name 'agent':`, !!agentElement);
+      }
       if (agentElement) {
         const agentComponent = agentElement.getComponents(AgentComponent)[0];
         console.log(`[AgentEffector.findAgent] Fallback: AgentComponent found:`, !!agentComponent);
@@ -221,6 +219,8 @@ export class AgentEffector extends BaseEffector {
     // Run asynchronously, don't await
     (async () => {
       try {
+        console.log(`[AgentEffector] Running agent cycle for activation ${activationId}...`);
+        
         // Run the agent cycle
         const response = await this.runAgentCycle(
           context,
@@ -228,8 +228,17 @@ export class AgentEffector extends BaseEffector {
           activationId
         );
 
-        // Emit events for response facets
+        console.log(`[AgentEffector] Agent cycle completed with ${response.facets.length} facets and ${response.events.length} events`);
+
+        // Emit events first (they may trigger actions)
+        for (const event of response.events) {
+          console.log(`[AgentEffector] Emitting agent event: ${event.topic}`);
+          this.element.emit(event);
+        }
+
+        // Then emit facets for response
         for (const facet of response.facets) {
+          console.log(`[AgentEffector] Emitting facet via veil:operation: ${facet.type} (${facet.id})`);
           this.element.emit({
             topic: 'veil:operation',
             source: this.element.getRef(),
@@ -243,8 +252,10 @@ export class AgentEffector extends BaseEffector {
           });
         }
 
+        console.log(`[AgentEffector] All ${response.facets.length} facets and ${response.events.length} events emitted`);
+
       } catch (error) {
-        console.error('Agent cycle error:', error);
+        console.error('[AgentEffector] Agent cycle error:', error);
 
         // Emit error event
         this.element.emit({
@@ -280,27 +291,33 @@ export class AgentEffector extends BaseEffector {
     context: RenderedContext,
     streamRef?: StreamRef,
     activationId?: string
-  ): Promise<{ facets: Facet[] }> {
+  ): Promise<{ facets: Facet[]; events: SpaceEvent[] }> {
     const facets: Facet[] = [];
     
     // Guard against missing agent
     if (!this.agent) {
       console.error('[AgentEffector] Agent not available for runCycle');
-      return { facets: [] };
+      return { facets: [], events: [] };
     }
+    
+    console.log(`[AgentEffector.runAgentCycle] Calling agent.runCycle() with ${context.messages.length} messages...`);
     
     // Run the agent's cycle with the full context
     const outgoingFrame = await this.agent.runCycle(context, streamRef);
+    
+    console.log(`[AgentEffector.runAgentCycle] Agent returned frame with ${outgoingFrame.deltas.length} operations and ${outgoingFrame.events?.length || 0} events`);
     
     // Convert agent operations to facets
     for (const operation of outgoingFrame.deltas) {
       if (operation.type === 'addFacet') {
         const preparedFacet = this.prepareAgentFacet(operation.facet, streamRef);
         facets.push(preparedFacet);
+        console.log(`[AgentEffector.runAgentCycle] Prepared facet: ${preparedFacet.type} (${preparedFacet.id})`);
       }
     }
 
-    return { facets };
+    console.log(`[AgentEffector.runAgentCycle] Returning ${facets.length} facets and ${outgoingFrame.events?.length || 0} events`);
+    return { facets, events: outgoingFrame.events || [] };
   }
   
   private parseContextMetadata(content: string): { tokenCount?: number; totalTokens?: number } {

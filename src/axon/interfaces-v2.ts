@@ -50,7 +50,13 @@ export interface IAxonEnvironmentV2 extends IAxonEnvironment {
   // Component base classes
   BaseAfferent: any;
   
-  // RETM base classes/interfaces
+  // RETM base component classes (for creating RETM components in AXON modules)
+  BaseReceptor: any;
+  BaseEffector: any;
+  BaseTransform: any;
+  BaseMaintainer: any;
+  
+  // RETM interfaces (for type checking)
   Receptor: any;
   Effector: any;
   Transform: any;

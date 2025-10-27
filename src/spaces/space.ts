@@ -452,8 +452,23 @@ export class Space extends Element {
       // PHASE 0: Event preprocessing (via Modulators)
       const processedEvents = this.runPhase0(events);
       
+      // Now that we know what events we're processing, emit frame:start to components
+      // This triggers onFirstFrame() for components that haven't seen a frame yet
+      const frameStartEvent: SpaceEvent = {
+        topic: 'frame:start',
+        source: this.getRef(),
+        payload: { frameId },
+        timestamp: Date.now()
+      };
+      await this.deliverEventToChildren(frameStartEvent);
+      
       // Record processed events in frame
       frame.events = processedEvents;
+      
+      // Deliver events to subscribed child elements
+      for (const event of processedEvents) {
+        await this.deliverEventToChildren(event);
+      }
       
       // PHASE 1: Events → VEIL (via Receptors)
       // Receptors return deltas directly (can add, rewrite, or remove facets)
@@ -537,6 +552,23 @@ export class Space extends Element {
   }
   
   // MARTEM processing phases
+  
+  /**
+   * Deliver event to subscribed child elements
+   */
+  private async deliverEventToChildren(event: SpaceEvent): Promise<void> {
+    // Iterate through all children and deliver to subscribed ones
+    for (const child of this.children) {
+      if (child.isSubscribedTo(event.topic)) {
+        console.log(`[Space] Delivering ${event.topic} to ${child.name}`);
+        try {
+          await child.handleEvent(event);
+        } catch (error) {
+          console.error(`[Space] Error delivering event ${event.topic} to element ${child.name}:`, error);
+        }
+      }
+    }
+  }
   
   /**
    * PHASE 0: Event preprocessing (Modulators)

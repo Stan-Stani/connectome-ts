@@ -298,12 +298,56 @@ export abstract class InteractiveComponent extends VEILComponent {
   static actions?: Record<string, string | { description: string; params?: any }>;
   
   protected actions: Map<string, (params?: any) => Promise<void>> = new Map();
+  private pendingActionDefinitions: Array<{ name: string; config?: { description?: string; params?: any } }> = [];
   
   /**
-   * Register an action handler
+   * Register an action handler (facet creation deferred to onFirstFrame)
    */
-  protected registerAction(name: string, handler: (params?: any) => Promise<void>): void {
+  protected registerAction(
+    name: string, 
+    handler: (params?: any) => Promise<void>,
+    config?: { description?: string; params?: any }
+  ): void {
     this.actions.set(name, handler);
+    // Store for facet creation in onFirstFrame
+    this.pendingActionDefinitions.push({ name, config });
+  }
+  
+  /**
+   * Create action-definition facets on first frame
+   */
+  async onFirstFrame(): Promise<void> {
+    console.log(`[${this.constructor.name}] onFirstFrame called with ${this.pendingActionDefinitions.length} pending actions`);
+    
+    // Create action-definition facets for all registered actions
+    for (const { name, config } of this.pendingActionDefinitions) {
+      const toolName = `${this.element.id}.${name}`;
+      this.addFacet({
+        id: `action-def-${this.element.id}-${name}`,
+        type: 'action-definition',
+        content: config?.description || `@${toolName}`,
+        displayName: toolName,
+        attributes: {
+          toolName,
+          actionName: name,
+          elementId: this.element.id,
+          parameters: config?.params || {},
+          description: config?.description || `Perform ${name} action`
+        }
+      });
+    }
+    
+    if (this.pendingActionDefinitions.length > 0) {
+      console.log(`[${this.constructor.name}] Created ${this.pendingActionDefinitions.length} action-definition facets`);
+    }
+  }
+  
+  /**
+   * Subscribe to frame:start so onFirstFrame gets called
+   */
+  onMount(): void {
+    this.element.subscribe('frame:start');
+    console.log(`[${this.constructor.name}] Subscribed to frame:start for onFirstFrame`);
   }
   
   /**

@@ -38,9 +38,12 @@ export class ContextTransform extends BaseTransform {
   process(state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
     
+    console.log(`[ContextTransform] process() called with ${state.facets.size} facets`);
+    
     // Find activation facets that need context
     for (const [id, facet] of state.facets) {
       if (facet.type === 'agent-activation' && hasStateAspect(facet)) {
+        console.log(`[ContextTransform] Found agent-activation facet: ${id}`);
         const activationState = facet.state as Record<string, any>;
         // Skip if context already rendered for this activation
         const contextExists = Array.from(state.facets.values()).some(f => 
@@ -49,19 +52,28 @@ export class ContextTransform extends BaseTransform {
           (f.state as Record<string, any>).activationId === id
         );
         
-        if (contextExists) continue;
+        if (contextExists) {
+          console.log(`[ContextTransform] Skipping ${id} - context already exists`);
+          continue;
+        }
+        
+        console.log(`[ContextTransform] Rendering context for activation ${id}...`);
         
         // Get agent-specific options from activation
         const agentOptions = this.buildAgentOptions(activationState);
         
         // Get VEILStateManager from Space
         const space = this.element?.findSpace() as any;
+        console.log(`[ContextTransform] Space:`, !!space, 'hasVEILStateManager:', !!(space?.getVEILStateManager));
+        
         if (!space || !space.getVEILStateManager) {
           console.error('[ContextTransform] Cannot access VEILStateManager - element not attached to Space');
+          console.error('[ContextTransform] Element:', this.element?.id, 'Space:', space?.id);
           continue;
         }
         
         const veilStateManager = space.getVEILStateManager();
+        console.log(`[ContextTransform] Got VEILStateManager, current sequence:`, veilStateManager.getState().currentSequence);
         
         // Render context using the existing HUD logic
         const fullState = veilStateManager.getState();
@@ -91,22 +103,28 @@ export class ContextTransform extends BaseTransform {
         
         // Store the full rendered context object in state
         // The agent needs the message array with roles
+        const contextFacetId = `context-${id}-${Date.now()}`;
+        console.log(`[ContextTransform] Creating rendered-context facet: ${contextFacetId}`);
+        
         deltas.push({
           type: 'addFacet',
           facet: {
-            id: `context-${id}-${Date.now()}`,
+            id: contextFacetId,
             type: 'rendered-context',
             state: {
               activationId: id,
               tokenCount: context.metadata.totalTokens,
               context: context // Store the full RenderedContext object
-            },
-            ephemeral: true
+            }
+            // Not ephemeral - valuable for debugging what context agent saw
           }
         });
+        
+        console.log(`[ContextTransform] Rendered context with ${context.metadata.totalTokens} tokens for activation ${id}`);
       }
     }
     
+    console.log(`[ContextTransform] Returning ${deltas.length} deltas`);
     return deltas;
   }
   
