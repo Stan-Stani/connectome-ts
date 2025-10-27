@@ -2,6 +2,10 @@
 
 The Connectome Debug MCP server provides deep introspection capabilities for debugging Connectome applications through Cursor's MCP interface.
 
+> **Quick Start Alternative**: For immediate runtime access without MCP setup, use the **Inspector Debug Registry** by launching with `--inspect`. See `../DEBUG-REGISTRY.md` for details.
+>
+> The Inspector Debug Registry provides instant access to Host, Space, VEIL, and agents through `global.__connectome_debug` when running with Node.js inspector.
+
 ## Features
 
 - **Connection Management**: Connect to debug servers on different ports
