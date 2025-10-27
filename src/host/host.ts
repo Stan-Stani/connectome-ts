@@ -16,6 +16,7 @@ import { Component } from '../spaces/component';
 import { Element } from '../spaces/element';
 import { SpaceEvent } from '../spaces/types';
 import { restoreVEILState, restoreElementTree } from '../persistence/restoration';
+import { registerDebugHost, registerDebugSpace, registerDebugServer } from '../debug/debug-registry';
 
 export interface HostConfig {
   persistence?: {
@@ -81,20 +82,23 @@ export class ConnectomeHost {
   
   constructor(config: HostConfig = {}) {
     this.config = config;
-    
+
+    // Register for debug access (only when --inspect is active)
+    registerDebugHost(this);
+
     // Register providers
     if (config.providers) {
       Object.entries(config.providers).forEach(([id, provider]) => {
         this.providers.set(id, provider);
         this.referenceRegistry.set(`provider:${id}`, provider);
-        
+
         // Also register common names for convenience
         if (id === 'llm.primary') {
           this.referenceRegistry.set('llmProvider', provider);
         }
       });
     }
-    
+
     // Register secrets
     if (config.secrets) {
       Object.entries(config.secrets).forEach(([id, secret]) => {
@@ -152,14 +156,17 @@ export class ConnectomeHost {
     }
     
     // Core services already registered in createFresh/restore
-    
+
+    // Register space for debug access (only when --inspect is active)
+    registerDebugSpace(space);
+
     // Set up persistence tracking if enabled
     if (this.config.persistence?.enabled) {
       // Create storage adapter (reused for loading deltas)
       this.storageAdapter = new (await import('../persistence/file-storage')).FileStorageAdapter(
         this.config.persistence.storageDir || './connectome-state'
       );
-      
+
       // Mount persistence maintainer (auto-registration handles the rest!)
       const persistenceMaintainer = new PersistenceMaintainer(veilState, space, {
         storagePath: this.config.persistence.storageDir || './connectome-state',
@@ -167,21 +174,22 @@ export class ConnectomeHost {
       });
       // Just mount - auto-registration happens automatically
       await space.addComponentAsync(persistenceMaintainer);
-      
+
       // TODO: TransitionManager disabled - using PersistenceMaintainer instead
       // this.transitionManager = new TransitionManager(space, veilState, {
       //   snapshotInterval: this.config.persistence.snapshotInterval || 100,
       //   storagePath: this.config.persistence.storageDir || './connectome-state'
       // });
-      
+
       // Note: Shutdown handler should be added by the application, not here
       // to avoid duplicate handlers
     }
-    
+
     // Start debug server if enabled
     if (this.config.debug?.enabled) {
       const port = this.config.debug.port || 3015;
       this.debugServer = new DebugServer(space, { port });
+      registerDebugServer(this.debugServer);
       await this.debugServer.start();
       console.log(`🔍 Debug UI available at http://localhost:${port}`);
     }
