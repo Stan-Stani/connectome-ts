@@ -559,7 +559,40 @@ export class AxonLoaderComponent extends Component {
         }
       }
     }
-    
+
+    // Register afferents (mount as components on current element)
+    if (moduleExports.afferents) {
+      for (const [name, AfferentClass] of Object.entries(moduleExports.afferents)) {
+        if (typeof AfferentClass === 'function') {
+          try {
+            const afferent = new (AfferentClass as any)();
+
+            // Call setConnectionParams if the afferent has this method
+            if (typeof (afferent as any).setConnectionParams === 'function' && this.parsedUrl?.params) {
+              console.log(`[AxonLoader] Calling setConnectionParams on ${name} afferent`);
+              try {
+                await (afferent as any).setConnectionParams({
+                  host: this.parsedUrl.host,
+                  path: this.parsedUrl.path,
+                  ...this.parsedUrl.params
+                });
+                console.log(`[AxonLoader] ${name} initialized with connection params`);
+              } catch (error) {
+                console.error(`[AxonLoader] Failed to initialize ${name} afferent:`, error);
+              }
+            }
+
+            // Mount afferent as a component on this element
+            this.element.addComponent(afferent);
+            this.loadedExports.push(`afferent:${name}`);
+            console.log(`[AxonLoader] Registered afferent: ${name} on element ${this.element.id}`);
+          } catch (error) {
+            console.error(`[AxonLoader] Failed to register afferent ${name}:`, error);
+          }
+        }
+      }
+    }
+
     // Also load traditional component if exported (via component:add event)
     if (moduleExports.default || moduleExports.component) {
       const ComponentClass = moduleExports.default || moduleExports.component;
