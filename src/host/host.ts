@@ -344,6 +344,15 @@ export class ConnectomeHost {
       maintainer.resyncCache();
     }
     
+    // Manually trigger maintainer to create components from element-tree facets
+    // This must happen BEFORE exiting restoration mode
+    console.log('🔧 Creating components from element-tree facets...');
+    if (maintainer) {
+      const emptyFrame: any = { sequence: -1, timestamp: new Date().toISOString(), events: [], deltas: [] };
+      const result = await maintainer.process(emptyFrame, [], veilState.getState());
+      console.log(`✅ Maintainer created components: ${result.events?.length || 0} events, ${result.deltas?.length || 0} deltas`);
+    }
+    
     // Exit restoration mode - allow normal event processing to resume
     space.setRestorationMode(false);
     
@@ -356,12 +365,12 @@ export class ConnectomeHost {
     // This handles components loaded by AxonLoader during restoration
     await this.resolveDynamicComponents(space);
     
-    // Let app do any post-restore setup
-    await app.onRestore?.(space, veilState);
-    
     // Complete mounting for all restored components now that external services are ready
     console.log('🔧 Completing component mounting after restoration...');
     await space.completeMountForRestoration();
+    
+    // Let app do any post-restore setup
+    await app.onRestore?.(space, veilState);
     
     return { space, veilState };
   }

@@ -596,6 +596,13 @@ export class ElementTreeMaintainer extends BaseMaintainer {
         discordElementId: (component as any).discordElementId,
         agentElementId: (component as any).agentElementId
       });
+      
+      // If component has setConnectionParams (AXON afferents), call it with full config
+      // (includes URL params like host, path, guild, token, etc.)
+      if (axonMetadata && 'setConnectionParams' in component && typeof (component as any).setConnectionParams === 'function') {
+        console.log(`[ElementTreeMaintainer] Calling setConnectionParams for ${componentType} with config:`, config);
+        await (component as any).setConnectionParams(config);
+      }
     }
     
     console.log(`[ElementTreeMaintainer] Creating component ${componentType} for element ${elementId}`);
@@ -672,11 +679,17 @@ export class ElementTreeMaintainer extends BaseMaintainer {
       // Get module exports
       const moduleExports = module.exports as any;
       
-      // Handle AXON V2 format: createModule() returns { component, receptors, ... }
+      // Handle AXON V2 format: createModule() returns { component, receptors, afferents, ... }
       let ComponentClass;
       if (typeof moduleExports.createModule === 'function') {
         const exports = moduleExports.createModule(env);
-        ComponentClass = exports.component;
+        // Check for component, or for afferents (afferents is an object with class names as keys)
+        if (exports.component) {
+          ComponentClass = exports.component;
+        } else if (exports.afferents && typeof exports.afferents === 'object') {
+          // For afferents, get the class matching the componentType name
+          ComponentClass = exports.afferents[componentType] || Object.values(exports.afferents)[0];
+        }
       } else {
         // Handle traditional exports
         ComponentClass = moduleExports.default || moduleExports.component || moduleExports;

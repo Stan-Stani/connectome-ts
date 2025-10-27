@@ -560,32 +560,44 @@ export class AxonLoaderComponent extends Component {
       }
     }
 
-    // Register afferents (mount as components on current element)
+    // Register afferents (via component:add events for pure RETM)
     if (moduleExports.afferents) {
       for (const [name, AfferentClass] of Object.entries(moduleExports.afferents)) {
         if (typeof AfferentClass === 'function') {
           try {
-            const afferent = new (AfferentClass as any)();
-
-            // Call setConnectionParams if the afferent has this method
-            if (typeof (afferent as any).setConnectionParams === 'function' && this.parsedUrl?.params) {
-              console.log(`[AxonLoader] Calling setConnectionParams on ${name} afferent`);
-              try {
-                await (afferent as any).setConnectionParams({
-                  host: this.parsedUrl.host,
-                  path: this.parsedUrl.path,
-                  ...this.parsedUrl.params
-                });
-                console.log(`[AxonLoader] ${name} initialized with connection params`);
-              } catch (error) {
-                console.error(`[AxonLoader] Failed to initialize ${name} afferent:`, error);
+            const afferentClassName = this.manifest?.componentClass || (AfferentClass as any).name || name;
+            const { ComponentRegistry } = require('../persistence/component-registry');
+            ComponentRegistry.register(afferentClassName, AfferentClass as any);
+            
+            // Build config with URL params at top level (for setConnectionParams)
+            const config: any = {
+              ...(this.manifest?.config || {}),
+              ...(this.parsedUrl?.params || {}),  // host, path, guild, token, agent, etc.
+              _axonMetadata: {
+                axonUrl: this.axonUrl,
+                moduleUrl: this.moduleUrl,
+                manifestUrl: this.manifestUrl,
+                host: this.parsedUrl?.host,
+                path: this.parsedUrl?.path,
+                isAfferent: true  // Flag for maintainer
               }
-            }
-
-            // Mount afferent as a component on this element
-            this.element.addComponent(afferent);
+            };
+            
+            // Emit component:add - Maintainer will instantiate and call setConnectionParams
+            space.emit({
+              topic: 'component:add',
+              source: this.element.getRef(),
+              payload: {
+                elementId: this.element.id,
+                componentType: afferentClassName,
+                componentClass: 'component',
+                config
+              },
+              timestamp: Date.now()
+            });
+            
             this.loadedExports.push(`afferent:${name}`);
-            console.log(`[AxonLoader] Registered afferent: ${name} on element ${this.element.id}`);
+            console.log(`[AxonLoader] Emitted component:add for afferent: ${name}`);
           } catch (error) {
             console.error(`[AxonLoader] Failed to register afferent ${name}:`, error);
           }
