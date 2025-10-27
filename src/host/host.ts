@@ -36,6 +36,40 @@ export interface HostConfig {
   reset?: boolean;
 }
 
+/**
+ * Component to handle dynamic component loading events
+ */
+class HostHandlerComponent extends Component {
+  private host: ConnectomeHost;
+
+  constructor(host: ConnectomeHost) {
+    super();
+    this.host = host;
+  }
+
+  onMount(): void {
+    console.log('[Host Handler] Mounted and ready to handle dynamic component events');
+  }
+
+  async handleEvent(event: SpaceEvent): Promise<void> {
+    console.log(`[Host Handler] Received event: ${event.topic}`);
+    if (event.topic === 'axon:component-loaded') {
+      const payload = event.payload as { component: Component; componentClass: string };
+      const component = payload.component;
+      if (component) {
+        console.log(`🔌 Resolving references for dynamically loaded component: ${payload.componentClass}`);
+        await this.host.resolveComponentReferences(component);
+        await this.host.resolveExternalResources(component);
+
+        // Call onReferencesResolved if it exists
+        if ('onReferencesResolved' in component && typeof component.onReferencesResolved === 'function') {
+          component.onReferencesResolved();
+        }
+      }
+    }
+  }
+}
+
 export class ConnectomeHost {
   private config: HostConfig;
   private referenceRegistry = new Map<string, any>();
@@ -410,7 +444,7 @@ export class ConnectomeHost {
   /**
    * Resolve references for a component
    */
-  private async resolveComponentReferences(component: Component): Promise<void> {
+  public async resolveComponentReferences(component: Component): Promise<void> {
     const references = getReferenceMetadata(component);
     
     for (const ref of references) {
@@ -429,7 +463,7 @@ export class ConnectomeHost {
   /**
    * Resolve external resources for a component
    */
-  private async resolveExternalResources(component: Component): Promise<void> {
+  public async resolveExternalResources(component: Component): Promise<void> {
     const externals = getExternalMetadata(component);
     
     console.log(`Resolving ${externals.length} external resources for ${component.constructor.name}`);
@@ -562,30 +596,7 @@ export class ConnectomeHost {
       // Re-add the handler component if it's missing
       if (hostElement.components.length === 0) {
         console.log('[Host] Host handler has no components, adding handler component');
-        const host = this;
-        hostElement.addComponent(new class extends Component {
-          onMount(): void {
-            console.log('[Host Handler] Mounted and ready to handle dynamic component events (restored)');
-          }
-          
-          async handleEvent(event: SpaceEvent): Promise<void> {
-            console.log(`[Host Handler] Received event: ${event.topic}`);
-            if (event.topic === 'axon:component-loaded') {
-              const payload = event.payload as { component: Component; componentClass: string };
-              const component = payload.component;
-              if (component) {
-                console.log(`🔌 Resolving references for dynamically loaded component: ${payload.componentClass}`);
-                await host.resolveComponentReferences(component);
-                await host.resolveExternalResources(component);
-                
-                // Call onReferencesResolved if it exists
-                if ('onReferencesResolved' in component && typeof component.onReferencesResolved === 'function') {
-                  component.onReferencesResolved();
-                }
-              }
-            }
-          }
-        });
+        hostElement.addComponent(new HostHandlerComponent(this));
       }
       
       return;
@@ -593,31 +604,8 @@ export class ConnectomeHost {
     
     // Create new host handler
     console.log('[Host] Creating new host handler');
-    const host = this;
     hostElement = new Element('_host_handler');
-    hostElement.addComponent(new class extends Component {
-      onMount(): void {
-        console.log('[Host Handler] Mounted and ready to handle dynamic component events');
-      }
-      
-      async handleEvent(event: SpaceEvent): Promise<void> {
-        console.log(`[Host Handler] Received event: ${event.topic}`);
-        if (event.topic === 'axon:component-loaded') {
-          const payload = event.payload as { component: Component; componentClass: string };
-          const component = payload.component;
-          if (component) {
-            console.log(`🔌 Resolving references for dynamically loaded component: ${payload.componentClass}`);
-            await host.resolveComponentReferences(component);
-            await host.resolveExternalResources(component);
-            
-            // Call onReferencesResolved if it exists
-            if ('onReferencesResolved' in component && typeof component.onReferencesResolved === 'function') {
-              component.onReferencesResolved();
-            }
-          }
-        }
-      }
-    });
+    hostElement.addComponent(new HostHandlerComponent(this));
     space.addChild(hostElement);
     
     // Subscribe to axon component loaded events at both space and element level
