@@ -74,9 +74,9 @@ export class ElementRequestReceptor extends BaseReceptor {
           }
         });
         
-        // Also create event facet for history
+        // Also create event facet for history (no content - infrastructure only)
         facets.push(createEventFacet({
-          content: `Create element '${payload.name}' (ID: ${elementId})`,
+          content: '', // Infrastructure event - not rendered to agent context
           source: 'element-tree',
           eventType: 'element-create',
           metadata: { elementId, name: payload.name, parentId: payload.parentId },
@@ -175,9 +175,9 @@ export class ElementRequestReceptor extends BaseReceptor {
           });
         }
         
-        // Also create an event facet for history
+        // Also create an event facet for history (no content - infrastructure only)
         facets.push(createEventFacet({
-          content: `Add component '${componentType}' to element '${elementId}'`,
+          content: '', // Infrastructure event - not rendered to agent context
           source: 'element-tree',
           eventType: 'component-add',
           metadata: payload,
@@ -303,6 +303,32 @@ export class ElementTreeMaintainer extends BaseMaintainer {
             type: 'create',  // Both new and restored use same code path
             facet
           });
+        } else if (this.elementCache.has(elementState.elementId) && elementState.active && elementState.components) {
+          // Element exists, but check if components from element-tree need to be created
+          const element = this.elementCache.get(elementState.elementId);
+          for (const compDef of elementState.components) {
+            const componentExists = element?.components.some((c: any) => c.constructor.name === compDef.type);
+            if (!componentExists) {
+              // Queue component addition
+              const componentAddFacet: any = {
+                id: `restore-component-${elementState.elementId}-${compDef.type}`,
+                type: 'event',
+                state: {
+                  eventType: 'component-add',
+                  metadata: {
+                    elementId: elementState.elementId,
+                    componentType: compDef.type,
+                    componentClass: compDef.componentClass || 'component',
+                    config: compDef.config || {}
+                  }
+                }
+              };
+              this.pendingOperations.push({
+                type: 'add-component',
+                facet: componentAddFacet
+              });
+            }
+          }
         }
       }
       
@@ -401,6 +427,33 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     
     // Mount element - this will emit element:mount event (queued for next frame)
     parent.addChild(element);
+    
+    // If components were specified in element:create, add them directly to the pending operations
+    // This ensures they're processed in the same maintainer pass (critical for restoration)
+    if (components && Array.isArray(components)) {
+      for (const compDef of components) {
+        // Create a component:add facet to process
+        const componentAddFacet: any = {
+          id: `component-add-${elementId}-${compDef.type}-${Date.now()}`,
+          type: 'event',
+          state: {
+            eventType: 'component-add',
+            metadata: {
+              elementId,
+              componentType: compDef.type,
+              componentClass: compDef.componentClass || 'component',
+              config: compDef.config || {}
+            }
+          }
+        };
+        
+        // Add to pending operations so processComponentAdditions handles it
+        this.pendingOperations.push({
+          type: 'add-component',
+          facet: componentAddFacet
+        });
+      }
+    }
     
     // Emit success continuation if tag exists
     if (continuationTag || continuations) {
@@ -679,16 +732,23 @@ export class ElementTreeMaintainer extends BaseMaintainer {
       // Get module exports
       const moduleExports = module.exports as any;
       
-      // Handle AXON V2 format: createModule() returns { component, receptors, afferents, ... }
+      // Handle AXON V2 format: createModule() returns various formats
       let ComponentClass;
+      let moduleExportsObject;
+      
       if (typeof moduleExports.createModule === 'function') {
-        const exports = moduleExports.createModule(env);
-        // Check for component, or for afferents (afferents is an object with class names as keys)
-        if (exports.component) {
-          ComponentClass = exports.component;
-        } else if (exports.afferents && typeof exports.afferents === 'object') {
-          // For afferents, get the class matching the componentType name
-          ComponentClass = exports.afferents[componentType] || Object.values(exports.afferents)[0];
+        moduleExportsObject = moduleExports.createModule(env);
+        
+        // Handle different export formats:
+        if (typeof moduleExportsObject === 'function') {
+          // createModule() returns class directly (e.g., discord-control-panel)
+          ComponentClass = moduleExportsObject;
+        } else if (moduleExportsObject.component) {
+          // createModule() returns { component: Class }
+          ComponentClass = moduleExportsObject.component;
+        } else if (moduleExportsObject.afferents && typeof moduleExportsObject.afferents === 'object') {
+          // createModule() returns { afferents: { DiscordAfferent: Class } }
+          ComponentClass = moduleExportsObject.afferents[componentType] || Object.values(moduleExportsObject.afferents)[0];
         }
       } else {
         // Handle traditional exports
@@ -699,6 +759,19 @@ export class ElementTreeMaintainer extends BaseMaintainer {
         // Register with ComponentRegistry
         ComponentRegistry.register(componentType, ComponentClass);
         console.log(`[ElementTreeMaintainer] ✅ Registered AXON component: ${componentType}`);
+        
+        // Also register receptors if module exports them
+        if (moduleExportsObject && moduleExportsObject.receptors) {
+          const space = this.space as any; // Space has addReceptor method
+          for (const [receptorName, ReceptorClass] of Object.entries(moduleExportsObject.receptors)) {
+            if (typeof ReceptorClass === 'function') {
+              const receptor = new (ReceptorClass as any)();
+              (receptor as any).element = space; // Mount to Space
+              space.addReceptor(receptor);
+              console.log(`[ElementTreeMaintainer] ✅ Registered receptor from AXON module: ${receptorName}`);
+            }
+          }
+        }
       } else {
         throw new Error(`Module did not export a valid component class (got ${typeof ComponentClass})`);
       }

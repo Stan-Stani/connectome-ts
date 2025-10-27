@@ -606,27 +606,8 @@ export class Space extends Element {
         const groupDeltas: VEILDelta[] = [];
         
         for (const receptor of receptors) {
-          try {
-            const newDeltas = receptor.transform(event, this.getReadonlyState());
-            groupDeltas.push(...newDeltas);
-          } catch (error) {
-            console.error(`Receptor error for ${event.topic}:`, error);
-            groupDeltas.push({
-              type: 'addFacet',
-              facet: createEventFacet({
-                id: `error-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-                content: `Receptor error: ${String(error)}`,
-                source: 'space',
-                eventType: 'receptor-error',
-                metadata: {
-                  event: event.topic,
-                  error: String(error)
-                },
-                streamId: 'system',
-                streamType: 'system'
-              })
-            });
-          }
+          const newDeltas = receptor.transform(event, this.getReadonlyState());
+          groupDeltas.push(...newDeltas);
         }
         
         // Apply this priority group's changes
@@ -663,27 +644,8 @@ export class Space extends Element {
         const groupDeltas: VEILDelta[] = [];
         
         for (const transform of transforms) {
-          try {
-            const newDeltas = transform.process(this.getReadonlyState());
-            groupDeltas.push(...newDeltas);
-          } catch (error) {
-            console.error('Transform error:', error);
-            groupDeltas.push({
-              type: 'addFacet',
-              facet: createEventFacet({
-                id: `error-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-                content: `Transform error: ${String(error)}`,
-                source: 'space',
-                eventType: 'transform-error',
-                metadata: {
-                  transform: transform.constructor.name,
-                  error: String(error)
-                },
-                streamId: 'system',
-                streamType: 'system'
-              })
-            });
-          }
+          const newDeltas = transform.process(this.getReadonlyState());
+          groupDeltas.push(...newDeltas);
         }
         
         lastGroupDeltas = groupDeltas;
@@ -731,27 +693,10 @@ export class Space extends Element {
         );
         if (relevantChanges.length === 0) continue;
         
-        try {
-          const result = await effector.process(relevantChanges, this.getReadonlyState());
-          
-          if (result.events) {
-            groupEvents.push(...result.events);
-          }
-          
-          // External actions can be surfaced through tracing or debug observers
-        } catch (error) {
-          console.error('Effector error:', error);
-          // Create error event
-          groupEvents.push({
-            topic: 'system:error',
-            source: this.getRef(),
-            timestamp: Date.now(),
-            payload: {
-              type: 'effector-error',
-              effector: effector.constructor.name,
-              error: String(error)
-            }
-          });
+        const result = await effector.process(relevantChanges, this.getReadonlyState());
+        
+        if (result.events) {
+          groupEvents.push(...result.events);
         }
       }
       
@@ -779,31 +724,16 @@ export class Space extends Element {
       const groupDeltas: VEILDelta[] = [];
       
       for (const maintainer of maintainers) {
-        try {
-          const result = await maintainer.process(frame, changes, this.getReadonlyState());
-          
-          // Collect events for next frame
-          if (result.events) {
-            groupEvents.push(...result.events);
-          }
-          
-          // Collect deltas to apply in current frame
-          if (result.deltas) {
-            groupDeltas.push(...result.deltas);
-          }
-        } catch (error) {
-          console.error('Maintainer error:', error);
-          // Create error event
-          groupEvents.push({
-            topic: 'system:error',
-            source: this.getRef(),
-            timestamp: Date.now(),
-            payload: {
-              type: 'maintainer-error',
-              maintainer: maintainer.constructor.name,
-              error: String(error)
-            }
-          });
+        const result = await maintainer.process(frame, changes, this.getReadonlyState());
+        
+        // Collect events for next frame
+        if (result.events) {
+          groupEvents.push(...result.events);
+        }
+        
+        // Collect deltas to apply in current frame
+        if (result.deltas) {
+          groupDeltas.push(...result.deltas);
         }
       }
       

@@ -91,38 +91,23 @@ export class AxonLoaderComponent extends Component {
   }
   
   /**
-   * Called when component is mounted and external services are ready
-   * Returns a promise that resolves when the dynamic component is fully loaded
+   * Called when component is mounted
+   * FRESH START: Load module and emit component:add events for maintainer to process
+   * RESTORATION: Do nothing (component already in element-tree facet, maintainer creates it)
    */
   async onMount(): Promise<void> {
-    // Don't auto-connect during initialization
-    // Connection will be triggered explicitly in app.onStart() after all RETM components are ready
-    // This prevents external events from being emitted before receptors are registered
-    if (this.axonUrl && !this.loadedComponent) {
-      console.log(`[AxonLoader] Has axonUrl but deferring connection until onStart()`);
-    }
-  }
-  
-  /**
-   * Explicitly connect to the AXON module
-   * Should be called during app.onStart() after all infrastructure is ready
-   */
-  async connectNow(): Promise<void> {
-    if (this.axonUrl && !this.loadedComponent) {
-      console.log(`[AxonLoader] Connecting to ${this.axonUrl}`);
+    if (this.axonUrl && this.loadedExports.length === 0) {
+      // Fresh start - load module and register/emit for maintainer
+      console.log(`[AxonLoader] Loading module from ${this.axonUrl}`);
       try {
         await this.connect(this.axonUrl);
-        console.log(`[AxonLoader] Successfully connected and loaded component`);
-        
-        // If we have saved state for the loaded component, restore it
-        if (this.loadedComponentState && this.loadedComponent) {
-          console.log(`[AxonLoader] Restoring state for dynamically loaded component`);
-          await this.restoreLoadedComponentState();
-        }
+        console.log(`[AxonLoader] Module loaded, components will be created by maintainer`);
       } catch (error) {
-        console.error(`[AxonLoader] Failed to connect:`, error);
-        // Don't throw - allow retry later
+        console.error(`[AxonLoader] Failed to load module:`, error);
       }
+    } else if (this.loadedExports.length > 0) {
+      // Restoration - components already restored by maintainer
+      console.log(`[AxonLoader] Restored, exports: ${this.loadedExports.join(', ')}`);
     }
   }
   
