@@ -39,11 +39,21 @@ export async function restoreVEILState(
     currentStateCache: new Map()  // Will be rebuilt from facets
   };
   
+  // Helper to recursively add facet and all its children to the Map
+  const addFacetAndChildren = (facet: any) => {
+    newState.facets.set(facet.id, facet);
+    if (facet.children) {
+      for (const child of facet.children) {
+        addFacetAndChildren(child);
+      }
+    }
+  };
+  
   // Restore facets
   for (const [id, facetData] of serialized.facets) {
     const facet = deserializeFacet(facetData);
     if (facet) {
-      newState.facets.set(id, facet);
+      addFacetAndChildren(facet);
     }
   }
   

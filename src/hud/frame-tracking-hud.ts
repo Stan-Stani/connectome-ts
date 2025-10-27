@@ -554,7 +554,7 @@ export class FrameTrackingHUD implements CompressibleHUD {
     const chunks: RenderedChunk[] = [];
     const renderedStates = new Map<string, { content: string; facetId: string; type: string }>();
     
-    // Detect if this is a history dump (many event facets with nested speech)
+    // Detect if this is a history dump (event facets with nested speech)
     const eventFacetsWithSpeech = frame.deltas.filter(d => 
       d.type === 'addFacet' && 
       d.facet?.type === 'event' &&
@@ -562,12 +562,14 @@ export class FrameTrackingHUD implements CompressibleHUD {
       (d.facet as any).children.some((c: any) => c.type === 'speech')
     ).length;
     
-    const isHistoryDump = eventFacetsWithSpeech > 5;
+    // TODO [history-rendering]: Always wrap history dumps, even if just 1 message
+    // This makes it clear to the agent what's old vs new
+    const isHistoryDump = eventFacetsWithSpeech > 0;
     
     if (isHistoryDump) {
       chunks.push(createRenderedChunk(
-        '<history>\n',
-        this.estimateTokens('<history>\n'),
+        '<discord_history>\n',
+        this.estimateTokens('<discord_history>\n'),
         { chunkType: 'history-marker' }
       ));
     }
@@ -683,8 +685,8 @@ export class FrameTrackingHUD implements CompressibleHUD {
     // Add closing history tag if this was a history dump
     if (isHistoryDump) {
       chunks.push(createRenderedChunk(
-        '</history>\n',
-        this.estimateTokens('</history>\n'),
+        '</discord_history>\n',
+        this.estimateTokens('</discord_history>\n'),
         { chunkType: 'history-marker' }
       ));
     }
