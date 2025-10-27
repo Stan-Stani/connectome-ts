@@ -296,6 +296,12 @@ export class ConnectomeHost {
     // This includes both snapshot elements and any created in deltas
     await this.reconstructElementsFromVEIL(space, veilState);
     
+    // Resync ElementTreeMaintainer's cache with restored elements
+    const maintainer = (space as any).maintainers?.find((m: any) => m.constructor.name === 'ElementTreeMaintainer');
+    if (maintainer && typeof maintainer.resyncCache === 'function') {
+      maintainer.resyncCache();
+    }
+    
     // Exit restoration mode - allow normal event processing to resume
     space.setRestorationMode(false);
     

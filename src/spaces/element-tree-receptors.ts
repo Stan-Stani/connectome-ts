@@ -242,6 +242,31 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     this.elementCache.set(space.id, space);
   }
   
+  /**
+   * Resync element cache after restoration
+   * Call this after elements have been restored to populate the cache
+   */
+  resyncCache(): void {
+    console.log(`[ElementTreeMaintainer] Resyncing element cache...`);
+    this.elementCache.clear();
+    this.elementCache.set('root', this.space);
+    this.elementCache.set(this.space.id, this.space);
+    
+    // Recursively add all children
+    const syncChildren = (parent: Element) => {
+      for (const child of parent.children) {
+        this.elementCache.set(child.id, child);
+        if (child.name) {
+          this.elementCache.set(child.name, child);
+        }
+        syncChildren(child);
+      }
+    };
+    
+    syncChildren(this.space);
+    console.log(`[ElementTreeMaintainer] Cache resynced with ${this.elementCache.size} elements`);
+  }
+  
   async process(frame: Frame, changes: FacetDelta[], state: ReadonlyVEILState): Promise<import('./receptor-effector-types').MaintainerResult> {
     const events: SpaceEvent[] = [];
     const deltas: import('../veil/types').VEILDelta[] = [];
@@ -255,8 +280,8 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     // Process creations and restorations (top-down)
     this.processCreations(events, deltas);
     
-    // Process component additions
-    this.processComponentAdditions(state, events, deltas);
+    // Process component additions (async to allow AXON loading)
+    await this.processComponentAdditions(state, events, deltas);
     
     // Clear pending operations
     this.pendingOperations = [];
@@ -323,11 +348,11 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     }
   }
   
-  private processComponentAdditions(state: ReadonlyVEILState, events: SpaceEvent[], deltas: import('../veil/types').VEILDelta[]) {
+  private async processComponentAdditions(state: ReadonlyVEILState, events: SpaceEvent[], deltas: import('../veil/types').VEILDelta[]) {
     const additions = this.pendingOperations.filter(op => op.type === 'add-component');
     
     for (const addition of additions) {
-      this.addComponent(addition.facet!, state, events, deltas);
+      await this.addComponent(addition.facet!, state, events, deltas);
     }
   }
   
@@ -519,7 +544,7 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     });
   }
   
-  private addComponent(facet: Facet, state: ReadonlyVEILState, events: SpaceEvent[], deltas: import('../veil/types').VEILDelta[]): void {
+  private async addComponent(facet: Facet, state: ReadonlyVEILState, events: SpaceEvent[], deltas: import('../veil/types').VEILDelta[]): Promise<void> {
     const { elementId, componentType, config, componentClass } = facet.state?.metadata || {};
     
     if (!elementId || !componentType) return;
@@ -529,6 +554,8 @@ export class ElementTreeMaintainer extends BaseMaintainer {
       console.warn(`[ElementTreeMaintainer] Element ${elementId} not found for component ${componentType}`);
       return;
     }
+    
+    console.log(`[ElementTreeMaintainer] Found element ${elementId}, has ${element.components.length} components`);
     
     // Check if component already exists on element (idempotency)
     const alreadyExists = element.components.some((c: any) => 
@@ -540,10 +567,24 @@ export class ElementTreeMaintainer extends BaseMaintainer {
       return;
     }
     
+    // Check if this is an AXON component that needs to be loaded first
+    const axonMetadata = config?._axonMetadata;
+    if (axonMetadata?.moduleUrl && !ComponentRegistry.has(componentType)) {
+      console.log(`[ElementTreeMaintainer] Component ${componentType} not in registry, loading from AXON module: ${axonMetadata.moduleUrl}`);
+      await this.loadAndRegisterAxonComponent(componentType, axonMetadata);
+    }
+    
     const component = ComponentRegistry.create(componentType);
     if (!component) {
-      console.warn(`[ElementTreeMaintainer] Failed to create component ${componentType}`);
-      return;
+      const availableComponents = Array.from((ComponentRegistry as any).registry?.keys() || []).join(', ');
+      const error = new Error(
+        `Failed to create component '${componentType}' for element '${elementId}'. ` +
+        `Component not found in ComponentRegistry. ` +
+        `Available components: ${availableComponents || '(none)'}`
+      );
+      console.error(`[ElementTreeMaintainer] ❌ FAILED TO CREATE COMPONENT: ${componentType}`);
+      console.error(`[ElementTreeMaintainer] Element: ${elementId}, Config:`, config);
+      throw error;
     }
 
     // Apply config properties to component
@@ -585,7 +626,9 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     // Note: addComponent() triggers component._attach() which auto-registers
     // RETM components (receptors, transforms, effectors, maintainers) with Space.
     // No need for manual registration here!
+    console.log(`[ElementTreeMaintainer] About to add component to element ${elementId}, element has ${element.components.length} components`);
     element.addComponent(component);
+    console.log(`[ElementTreeMaintainer] Component added, element now has ${element.components.length} components`);
     
     // Emit component:mounted event for receptors to react to
     events.push({
@@ -599,6 +642,57 @@ export class ElementTreeMaintainer extends BaseMaintainer {
       },
       timestamp: Date.now()
     });
+  }
+  
+  /**
+   * Load and register an AXON component from a module URL
+   */
+  private async loadAndRegisterAxonComponent(componentType: string, axonMetadata: any): Promise<void> {
+    const { moduleUrl } = axonMetadata;
+    
+    console.log(`[ElementTreeMaintainer] Loading AXON component ${componentType} from ${moduleUrl}`);
+    
+    try {
+      // Fetch module code
+      const response = await fetch(moduleUrl);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      const moduleCode = await response.text();
+      
+      // Create module environment similar to AxonLoader
+      const { createAxonEnvironmentV2 } = require('../axon/environment-v2');
+      const env = createAxonEnvironmentV2();
+      
+      // Execute module
+      const module: { exports: any } = { exports: {} };
+      const moduleFunc = new Function('exports', 'module', 'env', moduleCode);
+      moduleFunc(module.exports, module, env);
+      
+      // Get module exports
+      const moduleExports = module.exports as any;
+      
+      // Handle AXON V2 format: createModule() returns { component, receptors, ... }
+      let ComponentClass;
+      if (typeof moduleExports.createModule === 'function') {
+        const exports = moduleExports.createModule(env);
+        ComponentClass = exports.component;
+      } else {
+        // Handle traditional exports
+        ComponentClass = moduleExports.default || moduleExports.component || moduleExports;
+      }
+      
+      if (typeof ComponentClass === 'function') {
+        // Register with ComponentRegistry
+        ComponentRegistry.register(componentType, ComponentClass);
+        console.log(`[ElementTreeMaintainer] ✅ Registered AXON component: ${componentType}`);
+      } else {
+        throw new Error(`Module did not export a valid component class (got ${typeof ComponentClass})`);
+      }
+    } catch (error) {
+      console.error(`[ElementTreeMaintainer] Failed to load AXON component ${componentType}:`, error);
+      throw error;
+    }
   }
   
   // Helper methods for sorting
