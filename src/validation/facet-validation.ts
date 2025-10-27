@@ -214,8 +214,10 @@ function validateEventFacet(facet: any, options: ValidationOptions): ValidationR
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  if (!hasContentAspect(facet) || !facet.content) {
-    errors.push(`Event facet '${facet.id}' must have content`);
+  // Content is optional for infrastructure events (element-create, component-add, etc.)
+  // These events exist for history/auditing but shouldn't render to agent context
+  if (!hasContentAspect(facet)) {
+    errors.push(`Event facet '${facet.id}' must have content aspect (even if empty string)`);
   }
 
   if (!hasStateAspect(facet) || !facet.state?.source) {

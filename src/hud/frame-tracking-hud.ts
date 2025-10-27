@@ -391,13 +391,16 @@ export class FrameTrackingHUD implements CompressibleHUD {
   }
 
   private getFrameSource(frame: Frame): 'user' | 'agent' | 'system' {
-    if (!frame.events || frame.events.length === 0) {
-      return 'system';
-    }
-
-    // Check for user input events
+    // TODO [multi-agent]: This assumes single agent. For multi-agent systems,
+    // we need per-facet role assignment, not per-frame classification.
+    // Frames can contain facets from multiple sources with different roles.
+    
+    // HACK: Infer type from frame contents (events AND deltas)
+    // After restoration, events are in deltas as facets, not in frame.events
+    
+    // Check for user input events (live processing path)
     const userTopics = ['console:input', 'discord:message', 'minecraft:chat'];
-    if (frame.events.some(event => {
+    const hasUserEvent = frame.events?.some(event => {
       if (!userTopics.includes(event.topic)) return false;
       
       // For discord:message events, check if it's from the bot itself
@@ -414,7 +417,27 @@ export class FrameTrackingHUD implements CompressibleHUD {
       }
       
       return true;
-    })) {
+    });
+    
+    if (hasUserEvent) {
+      return 'user';
+    }
+    
+    // HACK: Check event facets in deltas for user messages (restoration path)
+    const hasUserEventFacet = frame.deltas?.some(delta => {
+      if (delta.type === 'addFacet' && delta.facet?.type === 'event') {
+        const facet = delta.facet as any;
+        // Check for discord-message events with user speech (not bot speech)
+        if (facet.state?.eventType === 'discord-message' && Array.isArray(facet.children)) {
+          return facet.children.some((child: any) => 
+            child.type === 'speech' && !child.agentId
+          );
+        }
+      }
+      return false;
+    });
+    
+    if (hasUserEventFacet) {
       return 'user';
     }
 
