@@ -221,6 +221,19 @@ export class VEILStateManager {
 
         const cloned = this.cloneFacet(operation.facet);
         this.state.facets.set(cloned.id, cloned);
+        
+        // Recursively add children to the Map (matches restoration behavior)
+        if (cloned.children && cloned.children.length > 0) {
+          const addChildren = (facet: any) => {
+            for (const child of facet.children || []) {
+              this.state.facets.set(child.id, child);
+              if (child.children && child.children.length > 0) {
+                addChildren(child);
+              }
+            }
+          };
+          addChildren(cloned);
+        }
 
         // Update cache for state facets (clone to avoid shared references)
         if (cloned.type === 'state' && 'state' in cloned) {
