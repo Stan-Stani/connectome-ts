@@ -427,21 +427,6 @@ export class FrameTrackingHUD implements CompressibleHUD {
     // Default to user (system role should not be used)
     // Everything that isn't explicitly from an agent is user input/context
     return 'user';
-        // This is more robust than string matching on elementId
-        return event.source.elementType === 'AgentElement';
-      }
-      return false;
-    })) {
-      return 'agent';
-    }
-
-    // Check if any events have agent-related topics
-    const agentTopics = ['agent:speech', 'agent:thought', 'agent:action'];
-    if (frame.events.some(event => agentTopics.includes(event.topic))) {
-      return 'agent';
-    }
-
-    return 'system';
   }
 
   /**
