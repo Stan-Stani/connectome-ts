@@ -40,12 +40,11 @@ export async function restoreVEILState(
   };
   
   // Helper to recursively add facet and all its children to the Map
-  const addFacetAndChildren = (facet: any, depth = 0) => {
+  const addFacetAndChildren = (facet: any) => {
     newState.facets.set(facet.id, facet);
     if (facet.children && facet.children.length > 0) {
-      console.log(`[Restoration] Facet ${facet.id} has ${facet.children.length} children at depth ${depth}`);
       for (const child of facet.children) {
-        addFacetAndChildren(child, depth + 1);
+        addFacetAndChildren(child);
       }
     }
   };

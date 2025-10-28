@@ -218,7 +218,8 @@ export class MockLLMProvider implements LLMProvider {
     let lastSender = 'antra_tessera';  // Default
     if (lastUserMsg) {
       // Try to extract username from "Author: message" or "[Discord] Author: message" format
-      const authorMatch = lastUserMsg.content.match(/(?:\[Discord\]\s*)?([^:]+):/);
+      // Use [^:<>\n]+ to avoid matching tags or spanning lines
+      const authorMatch = lastUserMsg.content.match(/(?:\[Discord\]\s*)?([^:<>\n]+):/);
       if (authorMatch) {
         lastSender = authorMatch[1].trim();
       }
