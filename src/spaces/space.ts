@@ -87,8 +87,12 @@ export class Space extends Element {
    * Whether we're currently processing a frame
    */
   private processingFrame: boolean = false;
-  
-  
+
+  /**
+   * Whether a frame is already scheduled but hasn't started yet
+   */
+  private frameScheduled: boolean = false;
+
   /**
    * Tracer for observability
    */
@@ -390,10 +394,14 @@ export class Space extends Element {
       }
     });
     
-    // If not processing, start a frame
-    if (!this.processingFrame) {
+    // If not processing and not already scheduled, start a frame
+    if (!this.processingFrame && !this.frameScheduled) {
+      this.frameScheduled = true;
       // Use setImmediate or similar to process on next tick
-      setImmediate(() => this.processFrame());
+      setImmediate(() => {
+        this.frameScheduled = false;
+        this.processFrame();
+      });
     }
   }
   
@@ -544,9 +552,13 @@ export class Space extends Element {
       // to prevent race conditions with queueEvent
       const hasMore = this.eventQueue.length > 0;
       this.processingFrame = false;
-      
-      if (hasMore) {
-        setImmediate(() => this.processFrame());
+
+      if (hasMore && !this.frameScheduled) {
+        this.frameScheduled = true;
+        setImmediate(() => {
+          this.frameScheduled = false;
+          this.processFrame();
+        });
       }
     }
   }
