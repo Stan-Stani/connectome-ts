@@ -52,7 +52,7 @@ export abstract class VEILComponent extends Component {
     if (!frame) {
       throw new Error(
         `VEIL operations are only allowed during frame processing. ` +
-        `Move this operation from onMount() to onFirstFrame() or an event handler. ` +
+        `Move this operation to an event handler or use deferred operations. ` +
         `Component: ${this.constructor.name}, Operation: ${operation.type}`
       );
     }
@@ -214,9 +214,7 @@ export abstract class VEILComponent extends Component {
         });
         break;
       }
-      case 'action':
-      case 'action-definition':
-      case 'tool': {
+      case 'action': {
         const { toolName: attrToolName, parameters: attrParameters, ...rest } = attrs;
         const toolName = (attrToolName as string) ?? facetDef.displayName ?? 'action';
         const parameters = (attrParameters as Record<string, any>) ?? {};
@@ -233,6 +231,19 @@ export abstract class VEILComponent extends Component {
         if (Object.keys(rest).length > 0) {
           (facet.state as any).metadata = rest;
         }
+        break;
+      }
+      case 'action-definition':
+      case 'tool': {
+        // action-definition is metadata, not agent-generated content
+        // Don't use createActionFacet - preserve type as-is
+        facet = {
+          id: facetDef.id,
+          type: facetDef.type,
+          displayName: facetDef.displayName,
+          attributes: facetDef.attributes,
+          children: facetDef.children
+        } as Facet;
         break;
       }
       case 'agent-activation': {
@@ -298,10 +309,9 @@ export abstract class InteractiveComponent extends VEILComponent {
   static actions?: Record<string, string | { description: string; params?: any }>;
   
   protected actions: Map<string, (params?: any) => Promise<void>> = new Map();
-  private pendingActionDefinitions: Array<{ name: string; config?: { description?: string; params?: any } }> = [];
   
   /**
-   * Register an action handler (facet creation deferred to onFirstFrame)
+   * Register an action handler and create action-definition facet immediately
    */
   protected registerAction(
     name: string, 
@@ -309,45 +319,24 @@ export abstract class InteractiveComponent extends VEILComponent {
     config?: { description?: string; params?: any }
   ): void {
     this.actions.set(name, handler);
-    // Store for facet creation in onFirstFrame
-    this.pendingActionDefinitions.push({ name, config });
-  }
-  
-  /**
-   * Create action-definition facets on first frame
-   */
-  async onFirstFrame(): Promise<void> {
-    console.log(`[${this.constructor.name}] onFirstFrame called with ${this.pendingActionDefinitions.length} pending actions`);
     
-    // Create action-definition facets for all registered actions
-    for (const { name, config } of this.pendingActionDefinitions) {
-      const toolName = `${this.element.id}.${name}`;
-      this.addFacet({
-        id: `action-def-${this.element.id}-${name}`,
-        type: 'action-definition',
-        content: config?.description || `@${toolName}`,
-        displayName: toolName,
-        attributes: {
-          toolName,
-          actionName: name,
-          elementId: this.element.id,
-          parameters: config?.params || {},
-          description: config?.description || `Perform ${name} action`
-        }
-      });
-    }
-    
-    if (this.pendingActionDefinitions.length > 0) {
-      console.log(`[${this.constructor.name}] Created ${this.pendingActionDefinitions.length} action-definition facets`);
-    }
-  }
-  
-  /**
-   * Subscribe to frame:start so onFirstFrame gets called
-   */
-  onMount(): void {
-    this.element.subscribe('frame:start');
-    console.log(`[${this.constructor.name}] Subscribed to frame:start for onFirstFrame`);
+    // Create action-definition facet immediately (emitted to next frame)
+    const toolName = `${this.element.id}.${name}`;
+    const facet = {
+      id: `action-def-${this.element.id}-${name}`,
+      type: 'action-definition' as const,
+      // No content - action-definition is metadata, not renderable to LLM
+      displayName: toolName,
+      attributes: {
+        toolName,
+        actionName: name,
+        elementId: this.element.id,
+        parameters: config?.params || {},
+        description: config?.description || `Perform ${name} action`
+      }
+    };
+    console.log(`[registerAction] Creating facet:`, JSON.stringify(facet, null, 2));
+    this.addFacet(facet);
   }
   
   /**
