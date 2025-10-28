@@ -95,7 +95,7 @@ export abstract class VEILComponent extends Component {
     }
   }
   
-  private _deferredOperations?: VEILDelta[];
+  protected _deferredOperations?: VEILDelta[];
   
   /**
    * Process any deferred operations when element is added to space
@@ -311,7 +311,7 @@ export abstract class InteractiveComponent extends VEILComponent {
   protected actions: Map<string, (params?: any) => Promise<void>> = new Map();
   
   /**
-   * Register an action handler and create action-definition facet immediately
+   * Register an action handler and create action-definition facet (deferred to next frame)
    */
   protected registerAction(
     name: string, 
@@ -320,23 +320,27 @@ export abstract class InteractiveComponent extends VEILComponent {
   ): void {
     this.actions.set(name, handler);
     
-    // Create action-definition facet immediately (emitted to next frame)
+    // Defer facet creation to next frame (onMount happens outside frame processing)
     const toolName = `${this.element.id}.${name}`;
-    const facet = {
-      id: `action-def-${this.element.id}-${name}`,
-      type: 'action-definition' as const,
-      // No content - action-definition is metadata, not renderable to LLM
-      displayName: toolName,
-      attributes: {
-        toolName,
-        actionName: name,
-        elementId: this.element.id,
-        parameters: config?.params || {},
-        description: config?.description || `Perform ${name} action`
-      }
-    };
-    console.log(`[registerAction] Creating facet:`, JSON.stringify(facet, null, 2));
-    this.addFacet(facet);
+    if (!this._deferredOperations) {
+      this._deferredOperations = [];
+    }
+    this._deferredOperations.push({
+      type: 'addFacet',
+      facet: {
+        id: `action-def-${this.element.id}-${name}`,
+        type: 'action-definition',
+        // No content - action-definition is metadata, not renderable to LLM
+        displayName: toolName,
+        attributes: {
+          toolName,
+          actionName: name,
+          elementId: this.element.id,
+          parameters: config?.params || {},
+          description: config?.description || `Perform ${name} action`
+        }
+      } as Facet
+    });
   }
   
   /**
