@@ -12,7 +12,7 @@ import { VEILStateManager } from '../veil/veil-state';
 import type { Frame, Facet, StreamRef, StreamInfo } from '../veil/types';
 import { hasContentAspect } from '../veil/types';
 import type { SpaceEvent, ElementRef } from '../spaces/types';
-import type { DebugObserver, DebugFrameStartContext, DebugFrameCompleteContext, DebugEventContext, DebugAgentFrameContext, DebugRenderedContextInfo } from './types';
+import type { DebugObserver, DebugFrameStartContext, DebugFrameCompleteContext, DebugEventContext, DebugAgentFrameContext } from './types';
 import { deterministicUUID } from '../utils/uuid';
 import { Element } from '../spaces/element';
 import type { Component } from '../spaces/component';
@@ -257,28 +257,6 @@ class DebugStateTracker extends EventEmitter implements DebugObserver {
     this.emit('frame:outgoing', record);
   }
 
-  onRenderedContext(info: DebugRenderedContextInfo): void {
-    const record = this.lookupByInfo(info);
-    if (!record) {
-      return;
-    }
-
-    record.renderedContext = sanitizePayload(info.context) as RenderedContext;
-    if (info.streamRef) {
-      record.activeStream = info.streamRef;
-    }
-    if (info.agentId || info.agentName) {
-      record.agent = record.agent || {};
-      if (info.agentId) {
-        record.agent.id = info.agentId;
-      }
-      if (info.agentName) {
-        record.agent.name = info.agentName;
-      }
-    }
-
-    this.emit('frame:context', { frame: record, context: info.context });
-  }
 
   getFrames(limit?: number, offset: number = 0): DebugFrameRecord[] {
     // Sort frames in descending order by sequence (most recent first)
@@ -320,16 +298,6 @@ class DebugStateTracker extends EventEmitter implements DebugObserver {
   private lookup(frame: Frame): DebugFrameRecord | undefined {
     const uuid = frame.uuid || deterministicUUID(`${frame.sequence}`);
     return this.frameIndex.get(uuid);
-  }
-
-  private lookupByInfo(info: DebugRenderedContextInfo): DebugFrameRecord | undefined {
-    if (info.frameUUID) {
-      const record = this.frameIndex.get(info.frameUUID);
-      if (record) {
-        return record;
-      }
-    }
-    return this.frames.find(frame => frame.sequence === info.frameSequence && frame.kind === 'incoming');
   }
 
   private insertFrame(record: DebugFrameRecord): void {
@@ -720,8 +688,41 @@ export class DebugServer {
       const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : undefined;
       const offset = req.query.offset ? parseInt(String(req.query.offset), 10) : 0;
       const frames = this.tracker.getFrames(limit, offset);
+      
+      // Enrich frames with rendered-context from VEIL (not from frame properties)
+      const enrichedFrames = frames.map(frame => {
+        // Get VEIL state at this frame
+        const veilSnapshot = this.veilState.getStateAtSequence(frame.sequence);
+        const facets = Array.from(veilSnapshot.facets.values());
+        
+        // Find activation in this frame
+        const activationFacet = (frame as any).deltas?.find((d: any) => 
+          d.type === 'addFacet' && d.facet?.type === 'agent-activation'
+        )?.facet;
+        
+        let renderedContext = null;
+        if (activationFacet) {
+          // Find rendered-context facet for this activation
+          const contextFacet = facets.find(f => 
+            f.type === 'rendered-context' && 
+            (f as any).state?.activationId === activationFacet.id
+          );
+          renderedContext = contextFacet ? (contextFacet as any).state?.context : null;
+        }
+        
+        // Fallback to frame property if not in VEIL
+        if (!renderedContext && frame.renderedContext) {
+          renderedContext = frame.renderedContext;
+        }
+        
+        return {
+          ...frame,
+          renderedContext  // Override with VEIL data
+        };
+      });
+      
       const metrics = this.tracker.getMetrics();
-      const response: FrameListResponse = { frames, metrics };
+      const response: FrameListResponse = { frames: enrichedFrames, metrics };
       res.json(response);
     });
     
@@ -738,8 +739,30 @@ export class DebugServer {
       const veilSnapshot = this.veilState.getStateAtSequence(frame.sequence);
       const facets = Array.from(veilSnapshot.facets.values());
       
+      // Extract rendered-context from VEIL facets (single source of truth)
+      // Find activation facets in this frame's deltas
+      const activationFacet = (frame as any).deltas?.find((d: any) => 
+        d.type === 'addFacet' && d.facet?.type === 'agent-activation'
+      )?.facet;
+      
+      let renderedContext = null;
+      if (activationFacet) {
+        // Find rendered-context facet for this activation
+        const contextFacet = facets.find(f => 
+          f.type === 'rendered-context' && 
+          (f as any).state?.activationId === activationFacet.id
+        );
+        renderedContext = contextFacet ? (contextFacet as any).state?.context : null;
+      }
+      
+      // Fallback to frame property if not found in VEIL (for backwards compatibility)
+      if (!renderedContext && frame.renderedContext) {
+        renderedContext = frame.renderedContext;
+      }
+      
       res.json({
         ...frame,
+        renderedContext,  // Override with VEIL data
         veilState: {
           facets: facets.map(f => sanitizeFacetTreeNode(f)),
           sequence: veilSnapshot.sequence,

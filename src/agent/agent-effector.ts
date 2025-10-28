@@ -175,18 +175,8 @@ export class AgentEffector extends BaseEffector {
         const contextState = contextFacet.state as { context: RenderedContext };
         const context = contextState.context;
 
-        // Record rendered context for debug UI
-        const space = this.element.findSpace() as any;
-        if (space && space.getCurrentFrame && space.recordRenderedContext) {
-          const currentFrame = space.getCurrentFrame();
-          if (currentFrame) {
-            space.recordRenderedContext(currentFrame, context, {
-              agentId: this.getAgentId(),
-              agentName: this.element.name || undefined,
-              streamRef
-            });
-          }
-        }
+        // Rendered context is in VEIL as rendered-context facet
+        // Debug API reads it from there (no need to duplicate)
 
         // Start agent cycle in background (fire-and-forget)
         // This allows the frame to complete immediately, enabling other effectors

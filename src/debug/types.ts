@@ -21,15 +21,6 @@ export interface DebugEventContext {
   targetId?: string;
 }
 
-export interface DebugRenderedContextInfo {
-  frameSequence: number;
-  frameUUID?: string;
-  context: RenderedContext;
-  agentId?: string;
-  agentName?: string;
-  streamRef?: StreamRef;
-}
-
 /**
  * Observer interface used by the Space to notify the debug server about runtime activity.
  */
@@ -38,5 +29,4 @@ export interface DebugObserver {
   onFrameEvent?(frame: Frame, event: SpaceEvent, context: DebugEventContext): void;
   onFrameComplete?(frame: Frame, context: DebugFrameCompleteContext): void;
   onAgentFrame?(frame: Frame, context: DebugAgentFrameContext): void;
-  onRenderedContext?(info: DebugRenderedContextInfo): void;
 }

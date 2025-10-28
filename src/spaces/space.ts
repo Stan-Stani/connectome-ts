@@ -14,14 +14,11 @@ import type {
   DebugFrameStartContext,
   DebugFrameCompleteContext,
   DebugEventContext,
-  DebugAgentFrameContext,
-  DebugRenderedContextInfo
+  DebugAgentFrameContext
 } from '../debug/types';
 import { DebugServer, DebugServerConfig } from '../debug/debug-server';
 import { deterministicUUID } from '../utils/uuid';
 import { performance } from 'perf_hooks';
-import type { RenderedContext } from '../hud/types-v2';
-import type { RenderedContextSnapshot } from '../persistence/types';
 import { createEventFacet } from '../helpers/factories';
 import { 
   Modulator,
@@ -43,15 +40,6 @@ import {
   isMaintainer,
   isModulator 
 } from '../utils/retm-type-guards';
-
-interface RenderedContextRecord {
-  context: RenderedContext;
-  agentId?: string;
-  agentName?: string;
-  streamRef?: StreamRef;
-  recordedAt: string;
-  frameUUID?: string;
-}
 
 /**
  * The root Space element that orchestrates the entire system
@@ -109,8 +97,6 @@ export class Space extends Element {
   private frameObservers: Array<(frame: Frame) => Promise<void>> = [];
 
   private debugServerInstance?: DebugServer;
-
-  private renderedContextLog: Map<number, RenderedContextRecord> = new Map();
   
   // MARTEM architecture components
   private modulators: Modulator[] = [];
@@ -273,77 +259,6 @@ export class Space extends Element {
     this.debugServerInstance.start();
   }
 
-  /**
-   * Record the rendered context produced for an agent cycle so the debug UI
-   * can display exactly what the LLM saw.
-   */
-  recordRenderedContext(
-    frame: Frame,
-    context: RenderedContext,
-    metadata: { agentId?: string; agentName?: string; streamRef?: StreamRef } = {}
-  ): void {
-    const record: RenderedContextRecord = {
-      context,
-      agentId: metadata.agentId,
-      agentName: metadata.agentName,
-      streamRef: metadata.streamRef || frame.activeStream,
-      recordedAt: new Date().toISOString(),
-      frameUUID: frame.uuid
-    };
-
-    this.renderedContextLog.set(frame.sequence, record);
-    this.pruneRenderedContexts();
-
-    this.notifyDebugRenderedContext({
-      frameSequence: frame.sequence,
-      frameUUID: frame.uuid,
-      context,
-      agentId: record.agentId,
-      agentName: record.agentName,
-      streamRef: record.streamRef
-    });
-  }
-
-  getRenderedContextSnapshot(sequence: number): RenderedContextRecord | undefined {
-    return this.renderedContextLog.get(sequence);
-  }
-
-  clearRenderedContext(sequence: number): void {
-    this.renderedContextLog.delete(sequence);
-  }
-
-  pruneRenderedContexts(maxEntries: number = 200): void {
-    if (this.renderedContextLog.size <= maxEntries) {
-      return;
-    }
-    const sequences = Array.from(this.renderedContextLog.keys()).sort((a, b) => a - b);
-    while (this.renderedContextLog.size > maxEntries && sequences.length) {
-      const seq = sequences.shift();
-      if (typeof seq === 'number') {
-        this.renderedContextLog.delete(seq);
-      }
-    }
-  }
-
-  replayRenderedContextFromSnapshot(snapshot: RenderedContextSnapshot): void {
-    const record: RenderedContextRecord = {
-      context: snapshot.context,
-      agentId: snapshot.agentId,
-      agentName: snapshot.agentName,
-      streamRef: snapshot.streamRef,
-      recordedAt: snapshot.recordedAt,
-      frameUUID: snapshot.frameUUID
-    };
-    this.renderedContextLog.set(snapshot.sequence, record);
-    this.notifyDebugRenderedContext({
-      frameSequence: snapshot.sequence,
-      frameUUID: snapshot.frameUUID,
-      context: snapshot.context,
-      agentId: snapshot.agentId,
-      agentName: snapshot.agentName,
-      streamRef: snapshot.streamRef
-    });
-  }
 
   
   /**
@@ -910,11 +825,6 @@ export class Space extends Element {
     }
   }
 
-  private notifyDebugRenderedContext(info: DebugRenderedContextInfo): void {
-    for (const observer of this.debugObservers) {
-      observer.onRenderedContext?.(info);
-    }
-  }
   
   /**
    * Activate the agent with specified stream configuration
