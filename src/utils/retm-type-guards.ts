@@ -3,11 +3,12 @@
  * Used for auto-discovery of components in the element tree
  */
 
-import { 
+import {
   Modulator,
-  Receptor, 
-  Transform, 
-  Effector, 
+  Afferent,
+  Receptor,
+  Transform,
+  Effector,
   Maintainer,
   SpaceEvent,
   ReadonlyVEILState,
@@ -26,7 +27,8 @@ export const RETM_TYPE = Symbol('retm-type');
 
 export const RETM_TYPES = {
   MODULATOR: Symbol('modulator'),
-  RECEPTOR: Symbol('receptor'), 
+  AFFERENT: Symbol('afferent'),
+  RECEPTOR: Symbol('receptor'),
   TRANSFORM: Symbol('transform'),
   EFFECTOR: Symbol('effector'),
   MAINTAINER: Symbol('maintainer')
@@ -40,11 +42,29 @@ export function isModulator(component: any): component is Modulator {
   if (component?.[RETM_TYPE] === RETM_TYPES.MODULATOR) {
     return true;
   }
-  
+
   // Fallback to duck typing for backwards compatibility
   return component &&
     typeof component.process === 'function' &&
     component.process.length === 1; // Takes events array
+}
+
+/**
+ * Check if a component implements the Afferent interface
+ */
+export function isAfferent(component: any): component is Afferent {
+  // Prefer explicit type marking
+  if (component?.[RETM_TYPE] === RETM_TYPES.AFFERENT) {
+    return true;
+  }
+
+  // Fallback to duck typing - check for Afferent interface methods
+  return component &&
+    typeof component.initialize === 'function' &&
+    typeof component.start === 'function' &&
+    typeof component.stop === 'function' &&
+    typeof component.enqueueCommand === 'function' &&
+    typeof component.getStatus === 'function';
 }
 
 /**
@@ -130,13 +150,14 @@ export function isMaintainer(component: any): component is Maintainer {
  */
 export function getRETMInterfaces(component: any): string[] {
   const interfaces: string[] = [];
-  
+
   if (isModulator(component)) interfaces.push('Modulator');
+  if (isAfferent(component)) interfaces.push('Afferent');
   if (isReceptor(component)) interfaces.push('Receptor');
   if (isTransform(component)) interfaces.push('Transform');
   if (isEffector(component)) interfaces.push('Effector');
   if (isMaintainer(component)) interfaces.push('Maintainer');
-  
+
   return interfaces;
 }
 
@@ -145,6 +166,7 @@ export function getRETMInterfaces(component: any): string[] {
  */
 export function isRETMComponent(component: any): boolean {
   return isModulator(component) ||
+         isAfferent(component) ||
          isReceptor(component) ||
          isTransform(component) ||
          isEffector(component) ||

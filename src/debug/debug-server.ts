@@ -18,6 +18,7 @@ import { Element } from '../spaces/element';
 import type { Component } from '../spaces/component';
 import type { RenderedContext } from '../hud/types-v2';
 import { serializeVEILState } from '../persistence/serialization';
+import { isAfferent } from '../utils/retm-type-guards';
 
 export interface DebugServerConfig {
   enabled: boolean;
@@ -778,6 +779,30 @@ export class DebugServer {
       // Check modulators
       if ((space as any).modulators?.includes(component)) {
         metadata.martemRole = 'Modulator';
+      }
+
+      // Check afferents using type guard
+      if (isAfferent(component)) {
+        metadata.martemRole = 'Afferent';
+        // Add afferent-specific metadata
+        try {
+          const status = component.getStatus();
+          if (status) {
+            metadata.status = status;
+          }
+        } catch (e) {
+          // Ignore errors getting status
+        }
+        if (typeof component.getMetrics === 'function') {
+          try {
+            const metrics = component.getMetrics();
+            if (metrics) {
+              metadata.metrics = metrics;
+            }
+          } catch (e) {
+            // Ignore errors getting metrics
+          }
+        }
       }
 
       // Check receptors and gather topics
