@@ -391,44 +391,27 @@ export class FrameTrackingHUD implements CompressibleHUD {
   }
 
   private getFrameSource(frame: Frame): 'user' | 'agent' | 'system' {
-    // TODO [multi-agent]: This assumes single agent. For multi-agent systems,
-    // we need per-facet role assignment, not per-frame classification.
-    // Frames can contain facets from multiple sources with different roles.
+    // Domain-agnostic frame classification based on facet properties
     
-    // HACK: Infer type from frame contents (events AND deltas)
-    // After restoration, events are in deltas as facets, not in frame.events
-    
-    // Check for user input events (live processing path)
-    const userTopics = ['console:input', 'discord:message', 'minecraft:chat'];
-    const hasUserEvent = frame.events?.some(event => {
-      if (!userTopics.includes(event.topic)) return false;
-      
-      // For discord:message events, check if it's from the bot itself
-      // Bot's own messages in history should be treated as agent responses, not user input
-      if (event.topic === 'discord:message') {
-        const payload = event.payload as any;
-        const authorId = payload?.authorId;
-        const BOT_USER_ID = '1382891708513128485'; // TODO: Make configurable
-        
-        // If this is a message FROM the bot, it's an agent message
-        if (authorId === BOT_USER_ID) {
-          return false; // Not a user message
-        }
+    // Check for agent-generated facets (top-level facets with agentId)
+    const hasAgentFacet = frame.deltas?.some(delta => {
+      if (delta.type === 'addFacet' && delta.facet) {
+        // Top-level facets with agentId indicate agent turn
+        return !!(delta.facet as any).agentId;
       }
-      
-      return true;
+      return false;
     });
     
-    if (hasUserEvent) {
-      return 'user';
+    if (hasAgentFacet) {
+      return 'agent';
     }
     
-    // HACK: Check event facets in deltas for user messages (restoration path)
-    const hasUserEventFacet = frame.deltas?.some(delta => {
-      if (delta.type === 'addFacet' && delta.facet?.type === 'event') {
+    // Check for user input (facets with speech children that lack agentId)
+    const hasUserInput = frame.deltas?.some(delta => {
+      if (delta.type === 'addFacet' && delta.facet) {
         const facet = delta.facet as any;
-        // Check for discord-message events with user speech (not bot speech)
-        if (facet.state?.eventType === 'discord-message' && Array.isArray(facet.children)) {
+        // Any facet with speech children (without agentId) is user input
+        if (Array.isArray(facet.children)) {
           return facet.children.some((child: any) => 
             child.type === 'speech' && !child.agentId
           );
@@ -437,61 +420,13 @@ export class FrameTrackingHUD implements CompressibleHUD {
       return false;
     });
     
-    if (hasUserEventFacet) {
+    if (hasUserInput) {
       return 'user';
     }
 
-    // Check for agent-generated facets in deltas (speech, thought, action with agentId)
-    const hasAgentFacet = frame.deltas?.some(delta => {
-      if (delta.type === 'addFacet' && delta.facet) {
-        const facet = delta.facet;
-        // Check for agentId attribute (agent-generated content)
-        if ((facet as any).agentId) {
-          return true;
-        }
-        // Check nested children for agent speech (e.g., speech inside discord-msg)
-        if (Array.isArray((facet as any).children)) {
-          for (const child of (facet as any).children) {
-            if ((child as any).agentId) {
-              return true;
-            }
-            // Speech from bot in history has agentId
-            if (child.type === 'speech' && (child as any).agentId) {
-              return true;
-            }
-          }
-        }
-        // Also check for agent facet types at top level
-        if (facet.type === 'speech' || facet.type === 'thought' || facet.type === 'action') {
-          return true;
-        }
-      }
-      return false;
-    });
-    
-    if (hasAgentFacet) {
-      return 'agent';
-    }
-
-    // Check for agent-generated events by looking at VEIL operations from agent elements
-    if (frame.events.some(event => {
-      if (event.topic === 'veil:operation' && event.source) {
-        // Check if source is an AgentElement by elementType
-        // This is more robust than string matching on elementId
-        return event.source.elementType === 'AgentElement';
-      }
-      return false;
-    })) {
-      return 'agent';
-    }
-
-    // Check if any events have agent-related topics
-    const agentTopics = ['agent:speech', 'agent:thought', 'agent:action'];
-    if (frame.events.some(event => agentTopics.includes(event.topic))) {
-      return 'agent';
-    }
-
-    return 'system';
+    // Default to user (system role should not be used)
+    // Everything that isn't explicitly from an agent is user input/context
+    return 'user';
   }
 
   /**
@@ -554,25 +489,8 @@ export class FrameTrackingHUD implements CompressibleHUD {
     const chunks: RenderedChunk[] = [];
     const renderedStates = new Map<string, { content: string; facetId: string; type: string }>();
     
-    // Detect if this is a history dump (event facets with nested speech)
-    const eventFacetsWithSpeech = frame.deltas.filter(d => 
-      d.type === 'addFacet' && 
-      d.facet?.type === 'event' &&
-      Array.isArray((d.facet as any).children) &&
-      (d.facet as any).children.some((c: any) => c.type === 'speech')
-    ).length;
-    
-    // TODO [history-rendering]: Always wrap history dumps, even if just 1 message
-    // This makes it clear to the agent what's old vs new
-    const isHistoryDump = eventFacetsWithSpeech > 0;
-    
-    if (isHistoryDump) {
-      chunks.push(createRenderedChunk(
-        '<discord_history>\n',
-        this.estimateTokens('<discord_history>\n'),
-        { chunkType: 'history-marker' }
-      ));
-    }
+    // HUD just renders facets - no concept of "history dump"
+    // If a domain wants wrapping, encode it in the facet's displayName or structure
 
     // First pass: process state changes
     for (const operation of frame.deltas) {
@@ -682,14 +600,6 @@ export class FrameTrackingHUD implements CompressibleHUD {
       }
     }
     
-    // Add closing history tag if this was a history dump
-    if (isHistoryDump) {
-      chunks.push(createRenderedChunk(
-        '</discord_history>\n',
-        this.estimateTokens('</discord_history>\n'),
-        { chunkType: 'history-marker' }
-      ));
-    }
 
     return chunks;
   }
