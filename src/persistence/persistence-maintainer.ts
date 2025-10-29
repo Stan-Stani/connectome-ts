@@ -87,9 +87,12 @@ export class PersistenceMaintainer extends BaseMaintainer {
     await this.storage.saveDelta(delta);
   }
   
-  private async createSnapshot(sequence: number): Promise<void> {
+  async createSnapshot(sequence?: number): Promise<void> {
     // Get the full state
     const state = this.veilState.getState();
+
+    // Use provided sequence or current sequence
+    const snapshotSequence = sequence !== undefined ? sequence : state.currentSequence;
     
     // Element tree is now fully stored in element-tree facets within VEIL
     // No need for separate elementTree serialization
@@ -107,7 +110,7 @@ export class PersistenceMaintainer extends BaseMaintainer {
     const snapshot: PersistenceSnapshot = {
       version: 1,
       timestamp: new Date().toISOString(),
-      sequence,
+      sequence: snapshotSequence,
       lifecycleId: this.space.lifecycleId,  // Tag with current lifecycle
       spaceId: this.space.id,                // Stable Space ID
       veilState: serializeVEILState(state),
@@ -118,11 +121,11 @@ export class PersistenceMaintainer extends BaseMaintainer {
         agentCount: state.agents.size
       }
     };
-    
+
     // Save snapshot
     await this.storage.saveSnapshot(snapshot);
-    
-    this.lastSnapshotSequence = sequence;
-    console.log(`[PersistenceMaintainer] Created snapshot at sequence ${sequence}`);
+
+    this.lastSnapshotSequence = snapshotSequence;
+    console.log(`[PersistenceMaintainer] Created snapshot at sequence ${snapshotSequence}`);
   }
 }
