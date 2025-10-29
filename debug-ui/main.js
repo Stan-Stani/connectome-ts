@@ -726,6 +726,12 @@ const App = {
       deleteCount: 1,
       deleting: false,
       deleteError: null,
+      // Injection dialog
+      showInjectDialog: false,
+      injectionPreset: 'agent-activation',
+      injectionPayload: '',
+      injecting: false,
+      injectError: null,
       // Manual LLM provider
       debugLLMRequests: [],
       selectedLLMRequestId: null,
@@ -1491,6 +1497,181 @@ const App = {
       }
     }
 
+    // Injection dialog methods
+    const injectionPresets = {
+      'agent-activation': {
+        name: 'Agent Activation',
+        description: 'Activate the agent with a manual trigger',
+        template: () => {
+          const agents = Array.from(state.veilState?.agents?.values() || []);
+          const targetAgentId = agents.length === 1 ? agents[0].id : undefined;
+          const targetAgent = agents.length === 1 ? agents[0].name : undefined;
+
+          return {
+            topic: 'veil:operation',
+            sourceId: 'debug-ui',
+            payload: {
+              operation: {
+                type: 'addFacet',
+                facet: {
+                  id: `activation-${Date.now()}`,
+                  type: 'agent-activation',
+                  displayName: 'Manual activation from Debug UI',
+                  state: {
+                    reason: 'Manual activation from Debug UI',
+                    priority: 'high',
+                    sourceAgentId: 'debug-ui',
+                    sourceAgentName: 'Debug UI',
+                    targetAgentId,
+                    targetAgent,
+                    streamId: 'console:debug-ui'
+                  },
+                  ephemeral: true,
+                  scope: 'global'
+                }
+              }
+            }
+          };
+        }
+      },
+      'custom-event': {
+        name: 'Custom Event',
+        description: 'Inject a custom event with a specific topic',
+        template: () => ({
+          topic: 'custom:test-event',
+          sourceId: 'debug-ui',
+          payload: {
+            message: 'Test event from Debug UI',
+            timestamp: Date.now()
+          }
+        })
+      },
+      'speak-operation': {
+        name: 'Speak Operation',
+        description: 'Add a speech facet to trigger agent speech',
+        template: () => ({
+          topic: 'veil:operation',
+          sourceId: 'debug-ui',
+          payload: {
+            operation: {
+              type: 'addFacet',
+              facet: {
+                id: `speech-${Date.now()}`,
+                type: 'speech',
+                displayName: 'Test speech from Debug UI',
+                content: 'This is a test message from the Debug UI',
+                state: {
+                  target: 'console',
+                  streamId: 'console:debug-ui'
+                },
+                ephemeral: true,
+                scope: 'global'
+              }
+            }
+          }
+        })
+      },
+      'state-facet': {
+        name: 'State Facet',
+        description: 'Add a custom state facet to VEIL',
+        template: () => ({
+          topic: 'veil:operation',
+          sourceId: 'debug-ui',
+          payload: {
+            operation: {
+              type: 'addFacet',
+              facet: {
+                id: `state-${Date.now()}`,
+                type: 'custom-state',
+                displayName: 'Custom state from Debug UI',
+                state: {
+                  key: 'value',
+                  customData: { test: true }
+                },
+                ephemeral: false,
+                scope: 'global'
+              }
+            }
+          }
+        })
+      },
+      'custom-json': {
+        name: 'Custom JSON',
+        description: 'Free-form JSON injection (edit the payload below)',
+        template: () => ({
+          topic: 'custom:topic',
+          sourceId: 'debug-ui',
+          payload: {}
+        })
+      }
+    };
+
+    function showInjectDialog() {
+      state.showInjectDialog = true;
+      state.injectionPreset = 'agent-activation';
+      state.injectError = null;
+      updateInjectionPayload();
+    }
+
+    function closeInjectDialog() {
+      state.showInjectDialog = false;
+      state.injectError = null;
+    }
+
+    function updateInjectionPayload() {
+      const preset = injectionPresets[state.injectionPreset];
+      if (preset && preset.template) {
+        const payloadObj = preset.template();
+        state.injectionPayload = JSON.stringify(payloadObj, null, 2);
+      }
+    }
+
+    async function performInjection() {
+      state.injecting = true;
+      state.injectError = null;
+
+      try {
+        // Parse the JSON payload
+        let payload;
+        try {
+          payload = JSON.parse(state.injectionPayload);
+        } catch (parseError) {
+          throw new Error(`Invalid JSON: ${parseError.message}`);
+        }
+
+        // Validate required fields
+        if (!payload.topic) {
+          throw new Error('Payload must include a "topic" field');
+        }
+
+        // Send to debug server
+        const response = await fetch('/api/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to inject event');
+        }
+
+        console.log('Event injected successfully', payload);
+
+        // Close dialog on success
+        closeInjectDialog();
+
+        // Wait a moment for the frame to be created
+        setTimeout(() => refresh(), 500);
+
+      } catch (error) {
+        state.injectError = error.message || 'Injection failed';
+        console.error('Injection error:', error);
+      } finally {
+        state.injecting = false;
+      }
+    }
+
     onMounted(async () => {
       await refresh();
       connectSocket();
@@ -1957,7 +2138,13 @@ const App = {
       showDeleteDialog,
       closeDeleteDialog,
       confirmDelete,
-      framesToDelete
+      framesToDelete,
+      // Injection dialog
+      injectionPresets,
+      showInjectDialog,
+      closeInjectDialog,
+      updateInjectionPayload,
+      performInjection
     };
   },
   template: `
@@ -1980,6 +2167,7 @@ const App = {
         <div class="controls">
           <button class="button" @click="refresh">Refresh</button>
           <button class="button button--primary" @click="activateAgent">Activate Agent</button>
+          <button class="button button--primary" @click="showInjectDialog">Inject Event</button>
           <button class="button button--danger" @click="showDeleteDialog" :disabled="!state.frames.length">Delete Frames</button>
         </div>
       </header>
@@ -2508,6 +2696,61 @@ const App = {
               :disabled="!state.deleteCount || state.deleteCount > state.frames.length || state.deleting"
             >
               {{ state.deleting ? 'Deleting...' : 'Delete Frames' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Injection Dialog -->
+      <div class="modal-overlay" v-if="state.showInjectDialog" @click="closeInjectDialog">
+        <div class="modal" @click.stop style="max-width: 700px;">
+          <div class="modal-header">
+            <h2>Inject Event / Facet</h2>
+            <button class="close-button" @click="closeInjectDialog">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label>Preset Template:</label>
+              <select
+                v-model="state.injectionPreset"
+                @change="updateInjectionPayload"
+                class="input"
+              >
+                <option
+                  v-for="(preset, key) in injectionPresets"
+                  :key="key"
+                  :value="key"
+                >
+                  {{ preset.name }} - {{ preset.description }}
+                </option>
+              </select>
+              <small>Select a preset template or choose "Custom JSON" to write your own</small>
+            </div>
+
+            <div class="form-group">
+              <label>JSON Payload:</label>
+              <textarea
+                v-model="state.injectionPayload"
+                class="input"
+                rows="16"
+                style="font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.85rem;"
+                spellcheck="false"
+              ></textarea>
+              <small>Edit the JSON payload above. Must include a "topic" field.</small>
+            </div>
+
+            <div v-if="state.injectError" class="error-message">
+              {{ state.injectError }}
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="button" @click="closeInjectDialog">Cancel</button>
+            <button
+              class="button button--primary"
+              @click="performInjection"
+              :disabled="state.injecting || !state.injectionPayload"
+            >
+              {{ state.injecting ? 'Injecting...' : 'Inject Event' }}
             </button>
           </div>
         </div>
