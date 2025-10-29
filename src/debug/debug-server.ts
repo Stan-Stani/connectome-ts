@@ -777,6 +777,10 @@ export class DebugServer {
         const spaceInfo = {
           id: this.space.id,
           name: this.space.name,
+          components: this.space.components.map(c => ({
+            type: c.constructor.name,
+            id: (c as any).id || 'unknown'
+          })),
           children: this.space.children.map(child => ({
             id: child.id,
             name: child.name,
