@@ -64,7 +64,7 @@ async function main() {
   const agentComponent = new AgentComponent(new BasicAgent({
     name: 'TestAgent',
     systemPrompt: 'You are a test agent. When activated, say hello and describe what happened.',
-    model: 'claude-3-5-sonnet-20241022',
+    model: 'claude-3-5-sonnet-20240620',
     temperature: 0.7
   }));
   

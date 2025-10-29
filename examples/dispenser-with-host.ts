@@ -68,7 +68,6 @@ async function main() {
     console.log('✅ Using Anthropic provider with Claude');
     const anthropic = new AnthropicProvider({
       apiKey,
-      defaultModel: 'claude-3-5-sonnet-20241022',
       defaultMaxTokens: 500
     });
     llmProvider = anthropic;

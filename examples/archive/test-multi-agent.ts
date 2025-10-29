@@ -74,10 +74,10 @@ class MultiAgentApp implements ConnectomeApplication {
     const aliceElement = new Element('agent-alice', 'Alice');
     const aliceConfig: AgentConfig = {
       name: 'Alice',
-      systemPrompt: `You are Alice, a helpful AI assistant who loves poetry. 
+      systemPrompt: `You are Alice, a helpful AI assistant who loves poetry.
       Keep your responses brief (1-2 sentences).
       You can see messages from other agents in the conversation.`,
-      modelName: 'claude-3-5-sonnet-20241022',
+      modelName: 'claude-3-5-sonnet-20240620',
       temperature: 0.7
     };
     const aliceComponent = new ConfiguredAgentComponent(aliceConfig);
@@ -90,7 +90,7 @@ class MultiAgentApp implements ConnectomeApplication {
       systemPrompt: `You are Bob, a technical AI assistant who loves math and science.
       Keep your responses brief (1-2 sentences).
       You can see messages from other agents in the conversation.`,
-      modelName: 'claude-3-5-sonnet-20241022',
+      modelName: 'claude-3-5-sonnet-20240620',
       temperature: 0.7
     };
     const bobComponent = new ConfiguredAgentComponent(bobConfig);
