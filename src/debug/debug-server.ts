@@ -779,14 +779,14 @@ export class DebugServer {
           name: this.space.name,
           components: this.space.components.map(c => ({
             type: c.constructor.name,
-            id: (c as any).id || 'unknown'
+            id: c.element?.id || 'unknown'
           })),
           children: this.space.children.map(child => ({
             id: child.id,
             name: child.name,
             components: child.components.map(c => ({
               type: c.constructor.name,
-              id: (c as any).id || 'unknown'
+              id: c.element?.id || 'unknown'
             }))
           })),
           componentCount: this.space.components.length,
