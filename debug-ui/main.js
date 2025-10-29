@@ -1234,21 +1234,35 @@ const App = {
           const targetAgentId = agents.length === 1 ? agents[0].id : undefined;
           const targetAgent = agents.length === 1 ? agents[0].name : undefined;
           
+          // Construct agent-activation facet directly
+          const activationFacet = {
+            id: `activation-${Date.now()}`,
+            type: 'agent-activation',
+            displayName: 'Manual activation from Debug UI',
+            state: {
+              reason: 'Manual activation from Debug UI',
+              priority: 'high',
+              sourceAgentId: 'debug-ui',
+              sourceAgentName: 'Debug UI',
+              targetAgentId,
+              targetAgent,
+              streamId: 'console:debug-ui'
+            },
+            ephemeral: true,
+            scope: 'global'
+          };
+
           const response = await fetch('/api/events', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              topic: 'agent:activate',
+              topic: 'veil:operation',
               sourceId: 'debug-ui',
               payload: {
-                source: 'debug-ui',
-                sourceAgentId: 'debug-ui',
-                sourceAgentName: 'Debug UI',
-                reason: 'Manual activation from Debug UI',
-                priority: 'high',
-                streamId: 'console:debug-ui',
-                targetAgentId,
-                targetAgent
+                operation: {
+                  type: 'addFacet',
+                  facet: activationFacet
+                }
               }
             })
           });
@@ -1257,8 +1271,12 @@ const App = {
           const error = await response.json();
           throw new Error(error.error || 'Failed to activate agent');
         }
-        
-        console.log('Agent activation triggered', { targetAgentId, targetAgent });
+
+        console.log('Agent activation facet injected via veil:operation', {
+          activationId: activationFacet.id,
+          targetAgentId,
+          targetAgent
+        });
         
         // Wait a moment for the frame to be created
         setTimeout(() => refresh(), 500);
