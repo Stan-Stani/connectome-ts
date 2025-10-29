@@ -771,6 +771,57 @@ export class DebugServer {
       });
     });
 
+    // Helper function to detect MARTEM role and gather metadata
+    const getMartemMetadata = (component: Component, space: Space) => {
+      const metadata: any = { martemRole: null };
+
+      // Check modulators
+      if ((space as any).modulators?.includes(component)) {
+        metadata.martemRole = 'Modulator';
+      }
+
+      // Check receptors and gather topics
+      if ((space as any).receptors) {
+        const topics: string[] = [];
+        for (const [topic, receptors] of (space as any).receptors.entries()) {
+          if (receptors.includes(component)) {
+            topics.push(topic);
+          }
+        }
+        if (topics.length > 0) {
+          metadata.martemRole = 'Receptor';
+          metadata.topics = topics;
+        }
+      }
+
+      // Check transforms
+      if ((space as any).transforms?.includes(component)) {
+        metadata.martemRole = 'Transform';
+      }
+
+      // Check effectors
+      if ((space as any).effectors?.includes(component)) {
+        metadata.martemRole = 'Effector';
+      }
+
+      // Check maintainers
+      if ((space as any).maintainers?.includes(component)) {
+        metadata.martemRole = 'Maintainer';
+      }
+
+      // Add common MARTEM properties if this is a MARTEM component
+      if (metadata.martemRole) {
+        if ((component as any).priority !== undefined) {
+          metadata.priority = (component as any).priority;
+        }
+        if ((component as any).facetFilters) {
+          metadata.facetFilters = (component as any).facetFilters;
+        }
+      }
+
+      return metadata;
+    };
+
     this.app.get('/api/state', (_req, res) => {
       try {
         // Serialize space structure without circular references
@@ -779,14 +830,16 @@ export class DebugServer {
           name: this.space.name,
           components: this.space.components.map(c => ({
             type: c.constructor.name,
-            id: c.element?.id || 'unknown'
+            id: c.element?.id || 'unknown',
+            ...getMartemMetadata(c, this.space)
           })),
           children: this.space.children.map(child => ({
             id: child.id,
             name: child.name,
             components: child.components.map(c => ({
               type: c.constructor.name,
-              id: c.element?.id || 'unknown'
+              id: c.element?.id || 'unknown',
+              ...getMartemMetadata(c, this.space)
             }))
           })),
           componentCount: this.space.components.length,
