@@ -93,7 +93,7 @@ The system captures comprehensive LLM interaction data:
   "category": "llm.request",
   "component": "AnthropicProvider",
   "data": {
-    "model": "claude-3-5-sonnet-20240620",
+    "model": "claude-sonnet-4-0",
     "maxTokens": 200,
     "temperature": 1.0,
     "stopSequences": ["</my_turn>"],
@@ -117,7 +117,7 @@ The system captures comprehensive LLM interaction data:
   "category": "llm.response",
   "component": "AnthropicProvider",
   "data": {
-    "model": "claude-3-5-sonnet-20240620",
+    "model": "claude-sonnet-4-0",
     "contentLength": 150,
     "contentPreview": "Hello! I can help you with...",
     "inputTokens": 100,

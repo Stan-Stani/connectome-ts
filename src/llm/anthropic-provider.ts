@@ -33,7 +33,7 @@ export class AnthropicProvider implements LLMProvider {
     this.client = new Anthropic({
       apiKey: config.apiKey
     });
-    this.defaultModel = config.defaultModel || 'claude-3-5-sonnet-20240620';
+    this.defaultModel = config.defaultModel || 'claude-sonnet-4-0';
     this.defaultMaxTokens = config.defaultMaxTokens || 1000;
     this.maxRetries = config.maxRetries ?? 3;
     this.retryDelay = config.retryDelay ?? 1000; // 1 second
