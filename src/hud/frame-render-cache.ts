@@ -10,14 +10,15 @@
 
 import {
   RenderContext,
-  CachedFrameRender,
+  CachedChunk,
   RenderCacheStats,
   RenderCacheConfig
 } from './render-context-types';
 
 export class FrameRenderCache {
-  // Cache structure: Map<contextKey, Map<frameSequence, CachedRender>>
-  private cache = new Map<string, Map<number, CachedFrameRender>>();
+  // Cache structure: Map<contextKey, Map<frameKey, CachedChunk[]>>
+  // frameKey format: "frame-{sequence}"
+  private cache = new Map<string, Map<string, CachedChunk[]>>();
   
   // LRU tracking: most recently accessed context keys
   private accessLog: string[] = [];
@@ -51,10 +52,11 @@ export class FrameRenderCache {
   }
   
   /**
-   * Get cached render for a frame in a context
+   * Get cached chunks for a frame
    */
-  get(context: RenderContext, frameSequence: number): CachedFrameRender | null {
+  get(context: RenderContext, frameSequence: number): CachedChunk[] | null {
     const contextKey = this.computeContextKey(context);
+    const frameKey = `frame-${frameSequence}`;
     const frameCache = this.cache.get(contextKey);
     
     if (!frameCache) {
@@ -62,7 +64,7 @@ export class FrameRenderCache {
       return null;
     }
     
-    const cached = frameCache.get(frameSequence);
+    const cached = frameCache.get(frameKey);
     
     if (!cached) {
       this.recordMiss();
@@ -75,17 +77,18 @@ export class FrameRenderCache {
     this.recordHit();
     
     if (this.config.verbose) {
-      console.log(`[FrameRenderCache] ✓ Hit: frame ${frameSequence} in ${contextKey}`);
+      console.log(`[FrameRenderCache] ✓ Hit: frame ${frameSequence} (${cached.length} chunks) in ${contextKey}`);
     }
     
     return cached;
   }
   
   /**
-   * Store rendered frame in cache
+   * Store rendered chunks for a frame in cache
    */
-  set(context: RenderContext, frameSequence: number, render: CachedFrameRender): void {
+  set(context: RenderContext, frameSequence: number, chunks: CachedChunk[]): void {
     const contextKey = this.computeContextKey(context);
+    const frameKey = `frame-${frameSequence}`;
     
     // Get or create frame cache for this context
     let frameCache = this.cache.get(contextKey);
@@ -98,8 +101,8 @@ export class FrameRenderCache {
       }
     }
     
-    // Store render
-    frameCache.set(frameSequence, render);
+    // Store chunks
+    frameCache.set(frameKey, chunks);
     
     // Update LRU
     this.touchContext(contextKey);
@@ -108,44 +111,48 @@ export class FrameRenderCache {
     this.evictLRUIfNeeded();
     
     if (this.config.verbose) {
-      console.log(`[FrameRenderCache] Cached frame ${frameSequence} in ${contextKey}`);
+      console.log(`[FrameRenderCache] Cached frame ${frameSequence} (${chunks.length} chunks) in ${contextKey}`);
     }
   }
   
   /**
-   * Invalidate a specific frame across ALL contexts
+   * Invalidate all chunks from a specific frame across ALL contexts
    * Use when a frame is modified (exotemporal changes)
    */
   invalidateFrame(frameSequence: number): void {
+    const frameKey = `frame-${frameSequence}`;
     let invalidatedCount = 0;
     
     for (const [contextKey, frameCache] of this.cache) {
-      if (frameCache.delete(frameSequence)) {
+      const deleted = frameCache.delete(frameKey);
+      if (deleted) {
         invalidatedCount++;
       }
     }
     
     if (this.config.verbose && invalidatedCount > 0) {
-      console.log(`[FrameRenderCache] Invalidated frame ${frameSequence} across ${invalidatedCount} contexts`);
+      console.log(`[FrameRenderCache] Invalidated frame ${frameSequence} from ${invalidatedCount} context(s)`);
     }
   }
   
   /**
-   * Invalidate a range of frames across ALL contexts
+   * Invalidate all chunks from a frame range across ALL contexts
    */
   invalidateRange(fromSequence: number, toSequence: number): void {
     let invalidatedCount = 0;
     
     for (const [contextKey, frameCache] of this.cache) {
       for (let seq = fromSequence; seq <= toSequence; seq++) {
-        if (frameCache.delete(seq)) {
+        const frameKey = `frame-${seq}`;
+        const deleted = frameCache.delete(frameKey);
+        if (deleted) {
           invalidatedCount++;
         }
       }
     }
     
     if (this.config.verbose && invalidatedCount > 0) {
-      console.log(`[FrameRenderCache] Invalidated frames ${fromSequence}-${toSequence}, removed ${invalidatedCount} entries`);
+      console.log(`[FrameRenderCache] Invalidated ${invalidatedCount} frame(s) from range ${fromSequence}-${toSequence}`);
     }
   }
   
@@ -185,11 +192,18 @@ export class FrameRenderCache {
    * Get cache statistics
    */
   getStats(): RenderCacheStats {
-    const totalFrames = Array.from(this.cache.values())
-      .reduce((sum, frameCache) => sum + frameCache.size, 0);
+    let totalFramesCached = 0;
+    let totalChunksInCache = 0;
     
-    // Estimate memory: ~600 bytes per cached frame
-    const memoryEstimate = totalFrames * 600;
+    for (const frameCache of this.cache.values()) {
+      totalFramesCached += frameCache.size;
+      for (const chunks of frameCache.values()) {
+        totalChunksInCache += chunks.length;
+      }
+    }
+    
+    // Estimate memory: ~600 bytes per cached chunk
+    const memoryEstimate = totalChunksInCache * 600;
     
     const total = this.stats.hits + this.stats.misses;
     const hitRate = total > 0 ? this.stats.hits / total : 0;
@@ -198,7 +212,7 @@ export class FrameRenderCache {
       hits: this.stats.hits,
       misses: this.stats.misses,
       contextCount: this.cache.size,
-      totalFramesCached: totalFrames,
+      totalFramesCached: totalFramesCached,
       memoryEstimateBytes: memoryEstimate,
       hitRate
     };
