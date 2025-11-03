@@ -555,7 +555,13 @@ export class FrameTrackingHUD implements CompressibleHUD {
             renderedStates.delete(facet.id);
           break;
           }
-          
+
+          // Skip ambient facets - they're rendered separately from current state
+          // This prevents duplicates from accumulating in frame history
+          if (facet.type === 'ambient') {
+            break;
+          }
+
           // Render directly
           const rendered = this.renderFacet(facet, renderMode);
           if (rendered) {
