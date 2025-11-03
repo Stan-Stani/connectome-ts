@@ -35,13 +35,14 @@ export interface RenderContext {
 }
 
 /**
- * A cached render of a frame in a specific context
+ * A cached rendered chunk (facet-level caching)
  */
-export interface CachedFrameRender {
+export interface CachedChunk {
   /**
-   * Which frame this is
+   * Unique identifier for this chunk
+   * Format: "frameSeq-facetId1-facetId2"
    */
-  frameSequence: number;
+  chunkId: string;
   
   /**
    * The context it was rendered in
@@ -49,14 +50,14 @@ export interface CachedFrameRender {
   context: RenderContext;
   
   /**
-   * The rendered content (actual text sent to LLM)
+   * The rendered content (actual text)
    */
-  renderedContent: string;
+  content: string;
   
   /**
-   * Frame type/source
+   * LLM message role for this chunk
    */
-  frameType: 'user' | 'agent' | 'system' | 'compressed';
+  role: 'user' | 'assistant' | 'system';
   
   /**
    * Estimated token count
@@ -64,9 +65,14 @@ export interface CachedFrameRender {
   tokens: number;
   
   /**
-   * Which facets were included in the rendering
+   * Which facets contributed
    */
   facetIds: string[];
+  
+  /**
+   * Which frame this came from
+   */
+  frameSequence: number;
   
   /**
    * When this was cached

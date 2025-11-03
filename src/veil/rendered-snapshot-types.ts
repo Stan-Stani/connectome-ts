@@ -47,6 +47,17 @@ export interface RenderedChunk {
   chunkType?: string;
   
   /**
+   * Optional: LLM message role for this chunk
+   * 
+   * Determines whether this chunk appears as user/assistant/system message.
+   * Based on facet origin (user input, agent output, system event).
+   * 
+   * For multi-agent: 'assistant' only for current agent's output,
+   * other agents' output appears as 'user'.
+   */
+  role?: 'user' | 'assistant' | 'system';
+  
+  /**
    * Optional: arbitrary metadata about this chunk
    * 
    * Can store HUD-specific information, rendering context, etc.
@@ -178,6 +189,7 @@ export function createRenderedChunk(
   options?: {
     facetIds?: string[];
     chunkType?: string;
+    role?: 'user' | 'assistant' | 'system';
     metadata?: Record<string, any>;
   }
 ): RenderedChunk {

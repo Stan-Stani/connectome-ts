@@ -74,6 +74,12 @@ export interface HUDConfig {
   };
   
   /**
+   * Current agent ID for multi-agent support
+   * Used to determine which agent's perspective we're rendering from
+   */
+  currentAgentId?: string;
+  
+  /**
    * Prompt caching configuration (Anthropic-level)
    * Places cache markers at cacheBorderDepth boundary
    */
