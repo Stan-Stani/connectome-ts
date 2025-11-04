@@ -644,16 +644,19 @@ export class FrameTrackingHUD implements CompressibleHUD {
         case 'addFacet': {
           const facet = operation.facet;
           if (!facet || removals?.has(facet.id)) break;
-          
+
           if (facet.type === 'state') {
-            const rendered = this.renderFacet(facet, renderMode);
-            if (rendered) {
-              renderedStates.set(facet.id, { 
-                content: rendered, 
-                facetId: facet.id, 
-                type: facet.type,
-                facet: facet
-              });
+            // Check scope visibility before rendering
+            if (this.isFacetVisible(facet, replayedState)) {
+              const rendered = this.renderFacet(facet, renderMode);
+              if (rendered) {
+                renderedStates.set(facet.id, {
+                  content: rendered,
+                  facetId: facet.id,
+                  type: facet.type,
+                  facet: facet
+                });
+              }
             }
           }
           replayedState.set(facet.id, facet);
@@ -662,19 +665,23 @@ export class FrameTrackingHUD implements CompressibleHUD {
 
         case 'rewriteFacet': {
           if (removals?.get(operation.id) === 'delete') break;
-          
+
           const currentFacet = replayedState.get(operation.id);
           if (!currentFacet) break;
-          
+
           const updatedFacet = this.mergeFacetChanges(currentFacet, operation.changes);
-          const rendered = this.renderFacet(updatedFacet, renderMode);
-          if (rendered) {
-            renderedStates.set(operation.id, { 
-              content: rendered, 
-              facetId: operation.id, 
-              type: updatedFacet.type,
-              facet: updatedFacet
-            });
+
+          // Check scope visibility before rendering
+          if (this.isFacetVisible(updatedFacet, replayedState)) {
+            const rendered = this.renderFacet(updatedFacet, renderMode);
+            if (rendered) {
+              renderedStates.set(operation.id, {
+                content: rendered,
+                facetId: operation.id,
+                type: updatedFacet.type,
+                facet: updatedFacet
+              });
+            }
           }
           replayedState.set(operation.id, updatedFacet);
             break;
@@ -716,6 +723,11 @@ export class FrameTrackingHUD implements CompressibleHUD {
             break;
           }
 
+          // Check scope visibility before rendering
+          if (!this.isFacetVisible(facet, replayedState)) {
+            break;
+          }
+
           // Render directly
           const rendered = this.renderFacet(facet, renderMode);
           if (rendered) {
@@ -723,8 +735,8 @@ export class FrameTrackingHUD implements CompressibleHUD {
             chunks.push(createRenderedChunk(
               rendered + '\n',
               this.estimateTokens(rendered),
-              { 
-                facetIds: [facet.id], 
+              {
+                facetIds: [facet.id],
                 chunkType: facet.type,
                 role: role,
                 metadata: { frameSequence: frame.sequence }
@@ -906,6 +918,36 @@ export class FrameTrackingHUD implements CompressibleHUD {
     return parts.join('\n');
   }
   
+  /**
+   * Check if a facet is visible based on active scopes
+   */
+  private isFacetVisible(facet: Facet, replayedState: Map<string, Facet>): boolean {
+    // Get facet's scope requirements
+    const facetScope = (facet as any).scope;
+
+    // Facets with no scope attribute are always visible
+    if (!facetScope || !Array.isArray(facetScope) || facetScope.length === 0) {
+      return true;
+    }
+
+    // Check if at least one of the facet's required scopes is active
+    for (const requiredScope of facetScope) {
+      const scopeFacetId = `scope-${requiredScope}`;
+      const scopeFacet = replayedState.get(scopeFacetId);
+
+      if (scopeFacet && scopeFacet.type === 'scope-change') {
+        const scopeState = (scopeFacet as any).state;
+        if (scopeState && scopeState.active === true) {
+          // At least one required scope is active
+          return true;
+        }
+      }
+    }
+
+    // None of the required scopes are active
+    return false;
+  }
+
   /**
    * Render facet in unfocused mode (structured with stream context)
    */
