@@ -304,7 +304,33 @@ export class FrameTrackingHUD implements CompressibleHUD {
       console.warn(`[HUD] Including all ${frames.length} frames to preserve conversation coherence.`);
       console.warn(`[HUD] Consider increasing contextTokenBudget in AgentConfig.`);
     }
-    
+
+    // Render ambient facets from current state (BEFORE converting to messages)
+    // Ambient facets are rendered from current state and respect scope visibility
+    const ambientFacets = this.getAmbientFacets(currentFacets);
+    console.log(`[HUD] Rendering ${ambientFacets.length} ambient facets from current state`);
+
+    for (const [id, facet] of ambientFacets) {
+      const rendered = this.renderFacet(facet);
+      if (rendered) {
+        // Debug: log tool-instruction facets being rendered
+        if ((facet as any).displayName === 'tool-instruction') {
+          console.log(`[HUD] Rendering tool-instruction ambient facet: ${id}`);
+        }
+        // Add ambient facets as system chunks
+        allChunks.push(createRenderedChunk(
+          rendered + '\n',
+          this.estimateTokens(rendered),
+          {
+            facetIds: [id],
+            chunkType: facet.type,
+            role: 'system',
+            metadata: { frameSequence: -1 } // No specific frame
+          }
+        ));
+      }
+    }
+
     // Build messages from chunks (NEW: facet-level rendering)
     const { messages, frameToMessageIndex } = this.chunksToMessages(
       allChunks,
@@ -931,7 +957,7 @@ export class FrameTrackingHUD implements CompressibleHUD {
     }
 
     // Debug logging for scoped facets
-    const isToolInstruction = facet.type === 'event' && (facet as any).displayName === 'tool-instruction';
+    const isToolInstruction = facet.type === 'ambient' && (facet as any).displayName === 'tool-instruction';
     if (isToolInstruction) {
       console.log(`[HUD.isFacetVisible] Checking tool-instruction facet ${facet.id}:`, {
         facetScope,
@@ -1415,14 +1441,21 @@ export class FrameTrackingHUD implements CompressibleHUD {
     }
     
     // Add floating ambient and state content as system context
+    // Ambient facets are rendered from current state and respect scope visibility
     const ambientFacets = this.getAmbientFacets(currentFacets);
     const ambientContent: string[] = [];
-    
+
     for (const [id, facet] of ambientFacets) {
       const rendered = this.renderFacet(facet);
-      if (rendered) ambientContent.push(rendered);
+      if (rendered) {
+        // Debug: log tool-instruction facets being rendered
+        if ((facet as any).displayName === 'tool-instruction') {
+          console.log(`[HUD] Rendering tool-instruction ambient facet: ${id}`);
+        }
+        ambientContent.push(rendered);
+      }
     }
-    
+
     // Don't add state content here - states are only rendered in frames where they're added or changed
     const contextParts = [...ambientContent];
     
@@ -1470,11 +1503,28 @@ export class FrameTrackingHUD implements CompressibleHUD {
   
   private getAmbientFacets(facets: Map<string, Facet>): Array<[string, Facet]> {
     const ambient: Array<[string, Facet]> = [];
+    let ambientCount = 0;
+    let visibleCount = 0;
+
     for (const [id, facet] of facets) {
       if (facet.type === 'ambient') {
-        ambient.push([id, facet]);
+        ambientCount++;
+        // Check scope visibility for ambient facets
+        const isVisible = this.isFacetVisible(facet, facets);
+        console.log(`[HUD.getAmbientFacets] Found ambient facet ${id}:`, {
+          displayName: (facet as any).displayName,
+          hasContent: !!(facet as any).content,
+          scope: (facet as any).scope,
+          isVisible
+        });
+        if (isVisible) {
+          visibleCount++;
+          ambient.push([id, facet]);
+        }
       }
     }
+
+    console.log(`[HUD.getAmbientFacets] Total facets: ${facets.size}, ambient: ${ambientCount}, visible: ${visibleCount}`);
     return ambient;
   }
   
