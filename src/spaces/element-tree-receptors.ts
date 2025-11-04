@@ -247,7 +247,7 @@ export class ElementTreeMaintainer extends BaseMaintainer {
    * Call this after elements have been restored to populate the cache
    */
   resyncCache(): void {
-    console.log(`[ElementTreeMaintainer] Resyncing element cache...`);
+    // console.log(`[ElementTreeMaintainer] Resyncing element cache...`);
     this.elementCache.clear();
     this.elementCache.set('root', this.space);
     this.elementCache.set(this.space.id, this.space);
@@ -264,7 +264,7 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     };
     
     syncChildren(this.space);
-    console.log(`[ElementTreeMaintainer] Cache resynced with ${this.elementCache.size} elements`);
+    // console.log(`[ElementTreeMaintainer] Cache resynced with ${this.elementCache.size} elements`);
   }
   
   async process(frame: Frame, changes: FacetDelta[], state: ReadonlyVEILState): Promise<import('./receptor-effector-types').MaintainerResult> {
@@ -420,7 +420,7 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     // Just need to create the actual Element instance to match the facet
     const elementId = requestedElementId;  // Already determined by Receptor
     
-    console.log(`[ElementTreeMaintainer] Creating element ${name} (${elementId})`);
+    // console.log(`[ElementTreeMaintainer] Creating element ${name} (${elementId})`);
     
     const element = new Element(name, elementId);
     this.elementCache.set(elementId, element);
@@ -608,7 +608,7 @@ export class ElementTreeMaintainer extends BaseMaintainer {
       return;
     }
     
-    console.log(`[ElementTreeMaintainer] Found element ${elementId}, has ${element.components.length} components`);
+    // console.log(`[ElementTreeMaintainer] Found element ${elementId}, has ${element.components.length} components`);
     
     // Check if component already exists on element (idempotency)
     const alreadyExists = element.components.some((c: any) => 
@@ -616,14 +616,14 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     );
     
     if (alreadyExists) {
-      console.log(`[ElementTreeMaintainer] Component ${componentType} already exists on element ${elementId}, skipping`);
+      // console.log(`[ElementTreeMaintainer] Component ${componentType} already exists on element ${elementId}, skipping`);
       return;
     }
     
     // Check if this is an AXON component that needs to be loaded first
     const axonMetadata = config?._axonMetadata;
     if (axonMetadata?.moduleUrl && !ComponentRegistry.has(componentType)) {
-      console.log(`[ElementTreeMaintainer] Component ${componentType} not in registry, loading from AXON module: ${axonMetadata.moduleUrl}`);
+      // console.log(`[ElementTreeMaintainer] Component ${componentType} not in registry, loading from AXON module: ${axonMetadata.moduleUrl}`);
       await this.loadAndRegisterAxonComponent(componentType, axonMetadata);
     }
     
@@ -642,23 +642,23 @@ export class ElementTreeMaintainer extends BaseMaintainer {
 
     // Apply config properties to component
     if (config) {
-      console.log(`[ElementTreeMaintainer] Applying config to ${componentType}:`, config);
+      // console.log(`[ElementTreeMaintainer] Applying config to ${componentType}:`, config);
       Object.assign(component, config);
-      console.log(`[ElementTreeMaintainer] After Object.assign, component properties:`, {
-        channels: (component as any).channels,
-        discordElementId: (component as any).discordElementId,
-        agentElementId: (component as any).agentElementId
-      });
+      // console.log(`[ElementTreeMaintainer] After Object.assign, component properties:`, {
+      //   channels: (component as any).channels,
+      //   discordElementId: (component as any).discordElementId,
+      //   agentElementId: (component as any).agentElementId
+      // });
       
       // If component has setConnectionParams (AXON afferents), call it with full config
       // (includes URL params like host, path, guild, token, etc.)
       if (axonMetadata && 'setConnectionParams' in component && typeof (component as any).setConnectionParams === 'function') {
-        console.log(`[ElementTreeMaintainer] Calling setConnectionParams for ${componentType} with config:`, config);
+        // console.log(`[ElementTreeMaintainer] Calling setConnectionParams for ${componentType} with config:`, config);
         await (component as any).setConnectionParams(config);
       }
     }
     
-    console.log(`[ElementTreeMaintainer] Creating component ${componentType} for element ${elementId}`);
+    // console.log(`[ElementTreeMaintainer] Creating component ${componentType} for element ${elementId}`);
     
     // Generate component ID before adding (so we know the index)
     const componentIndex = element.components.length;
@@ -686,9 +686,9 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     // Note: addComponent() triggers component._attach() which auto-registers
     // RETM components (receptors, transforms, effectors, maintainers) with Space.
     // No need for manual registration here!
-    console.log(`[ElementTreeMaintainer] About to add component to element ${elementId}, element has ${element.components.length} components`);
+    // console.log(`[ElementTreeMaintainer] About to add component to element ${elementId}, element has ${element.components.length} components`);
     element.addComponent(component);
-    console.log(`[ElementTreeMaintainer] Component added, element now has ${element.components.length} components`);
+    // console.log(`[ElementTreeMaintainer] Component added, element now has ${element.components.length} components`);
     
     // Emit component:mounted event for receptors to react to
     events.push({
@@ -710,7 +710,7 @@ export class ElementTreeMaintainer extends BaseMaintainer {
   private async loadAndRegisterAxonComponent(componentType: string, axonMetadata: any): Promise<void> {
     const { moduleUrl } = axonMetadata;
     
-    console.log(`[ElementTreeMaintainer] Loading AXON component ${componentType} from ${moduleUrl}`);
+    // console.log(`[ElementTreeMaintainer] Loading AXON component ${componentType} from ${moduleUrl}`);
     
     try {
       // Fetch module code
@@ -724,10 +724,42 @@ export class ElementTreeMaintainer extends BaseMaintainer {
       const { createAxonEnvironmentV2 } = require('../axon/environment-v2');
       const env = createAxonEnvironmentV2();
       
-      // Execute module
-      const module: { exports: any } = { exports: {} };
-      const moduleFunc = new Function('exports', 'module', 'env', moduleCode);
-      moduleFunc(module.exports, module, env);
+      // Write module to temp file for proper Node.js module loading
+      // This enables AXON modules to use require/import
+      const { writeFileSync, unlinkSync } = require('fs');
+      const { tmpdir } = require('os');
+      const { join, dirname } = require('path');
+      const Module = require('module');
+      
+      const tempFile = join(tmpdir(), `connectome-axon-${componentType}-${Date.now()}.js`);
+      writeFileSync(tempFile, moduleCode);
+      
+      // Clear module cache to force reload
+      delete require.cache[tempFile];
+      
+      // Create a module with proper paths for resolution
+      const axonModule = new Module(tempFile);
+      axonModule.filename = tempFile;
+      axonModule.paths = Module._nodeModulePaths(dirname(tempFile));
+      
+      // Add connectome-ts parent directory to module paths
+      // So 'connectome-ts/...' resolves correctly
+      const connectomeParentPath = join(__dirname, '../../..');
+      axonModule.paths.unshift(connectomeParentPath);
+      
+      // Load module
+      axonModule._compile(moduleCode, tempFile);
+      const module: { exports: any } = { exports: axonModule.exports };
+      
+      // Clean up temp file after a delay
+      setTimeout(() => {
+        try {
+          delete require.cache[tempFile];
+          unlinkSync(tempFile);
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      }, 1000);
       
       // Get module exports
       const moduleExports = module.exports as any;
@@ -758,7 +790,7 @@ export class ElementTreeMaintainer extends BaseMaintainer {
       if (typeof ComponentClass === 'function') {
         // Register with ComponentRegistry
         ComponentRegistry.register(componentType, ComponentClass);
-        console.log(`[ElementTreeMaintainer] ✅ Registered AXON component: ${componentType}`);
+        // console.log(`[ElementTreeMaintainer] ✅ Registered AXON component: ${componentType}`);
         
         // Also register receptors if module exports them
         if (moduleExportsObject && moduleExportsObject.receptors) {
@@ -768,7 +800,7 @@ export class ElementTreeMaintainer extends BaseMaintainer {
               const receptor = new (ReceptorClass as any)();
               (receptor as any).element = space; // Mount to Space
               space.addReceptor(receptor);
-              console.log(`[ElementTreeMaintainer] ✅ Registered receptor from AXON module: ${receptorName}`);
+              // console.log(`[ElementTreeMaintainer] ✅ Registered receptor from AXON module: ${receptorName}`);
             }
           }
         }
