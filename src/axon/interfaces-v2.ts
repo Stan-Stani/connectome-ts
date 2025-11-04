@@ -48,13 +48,18 @@ export interface IAxonRETMExports {
  */
 export interface IAxonEnvironmentV2 extends IAxonEnvironment {
   // Component base classes
+  ControlPanelComponent: any;
   BaseAfferent: any;
-  
+
   // RETM base component classes (for creating RETM components in AXON modules)
   BaseReceptor: any;
   BaseEffector: any;
   BaseTransform: any;
   BaseMaintainer: any;
+
+  // Control Panel receptors (built-in, ready to use)
+  ControlPanelActionsReceptor: any;
+  PanelScopeReceptor: any;
   
   // RETM interfaces (for type checking)
   Receptor: any;

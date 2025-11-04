@@ -930,20 +930,47 @@ export class FrameTrackingHUD implements CompressibleHUD {
       return true;
     }
 
+    // Debug logging for scoped facets
+    const isToolInstruction = facet.type === 'event' && (facet as any).displayName === 'tool-instruction';
+    if (isToolInstruction) {
+      console.log(`[HUD.isFacetVisible] Checking tool-instruction facet ${facet.id}:`, {
+        facetScope,
+        replayedStateSize: replayedState.size
+      });
+    }
+
     // Check if at least one of the facet's required scopes is active
     for (const requiredScope of facetScope) {
       const scopeFacetId = `scope-${requiredScope}`;
       const scopeFacet = replayedState.get(scopeFacetId);
 
+      if (isToolInstruction) {
+        console.log(`[HUD.isFacetVisible]   Looking for scope facet ${scopeFacetId}:`, {
+          found: !!scopeFacet,
+          type: scopeFacet?.type,
+          state: (scopeFacet as any)?.state
+        });
+      }
+
       if (scopeFacet && scopeFacet.type === 'scope-change') {
         const scopeState = (scopeFacet as any).state;
         if (scopeState && scopeState.active === true) {
+          if (isToolInstruction) {
+            console.log(`[HUD.isFacetVisible]   ✓ Scope is active, facet is VISIBLE`);
+          }
           // At least one required scope is active
           return true;
+        } else if (isToolInstruction) {
+          console.log(`[HUD.isFacetVisible]   ✗ Scope exists but not active:`, scopeState);
         }
+      } else if (isToolInstruction) {
+        console.log(`[HUD.isFacetVisible]   ✗ Scope facet not found or wrong type`);
       }
     }
 
+    if (isToolInstruction) {
+      console.log(`[HUD.isFacetVisible]   Result: HIDDEN (no active scopes)`);
+    }
     // None of the required scopes are active
     return false;
   }
