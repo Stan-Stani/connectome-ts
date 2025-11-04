@@ -385,6 +385,12 @@ export class Space extends Element {
       };
       await this.deliverEventToChildren(frameStartEvent);
       
+      // Apply any deltas that components added during frame:start
+      const componentDeltas = frame.deltas.length > 0 ? [...frame.deltas] : [];
+      const componentChanges = componentDeltas.length > 0 
+        ? this.veilState.applyDeltasDirect(componentDeltas)
+        : [];
+      
       // Record processed events in frame
       frame.events = processedEvents;
       
@@ -406,10 +412,11 @@ export class Space extends Element {
       
       // Collect all deltas into frame BEFORE Phase 4
       // (Maintainers need to see complete frame for saving)
-      frame.deltas = [...phase1Deltas, ...allPhase2Deltas];
+      // Include component deltas, receptor deltas, and transform deltas
+      frame.deltas = [...componentDeltas, ...phase1Deltas, ...allPhase2Deltas];
       
-      // Collect all changes from both phases
-      const allChanges = [...phase1Changes, ...allPhase2Changes];
+      // Collect all changes from all phases
+      const allChanges = [...componentChanges, ...phase1Changes, ...allPhase2Changes];
       
       // PHASE 3: VEIL → Events (via Effectors)
       const newEvents = await this.runPhase3(allChanges);

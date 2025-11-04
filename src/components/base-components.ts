@@ -104,8 +104,11 @@ export abstract class VEILComponent extends Component {
     if (this._deferredOperations && this.element?.space) {
       const space = this.element.space as Space;
       const frame = space.getCurrentFrame ? space.getCurrentFrame() : undefined;
+      console.log(`[VEILComponent.processDeferredOperations] frame exists: ${!!frame}, operations: ${this._deferredOperations.length}`);
       if (frame) {
         for (const op of this._deferredOperations) {
+          const opInfo = op.type === 'addFacet' ? `${op.type} ${(op as any).facet?.id}` : op.type;
+          console.log(`[VEILComponent.processDeferredOperations] Adding to frame:`, opInfo);
           frame.deltas.push(op);
         }
       }

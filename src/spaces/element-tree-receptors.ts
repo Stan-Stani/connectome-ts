@@ -724,10 +724,42 @@ export class ElementTreeMaintainer extends BaseMaintainer {
       const { createAxonEnvironmentV2 } = require('../axon/environment-v2');
       const env = createAxonEnvironmentV2();
       
-      // Execute module
-      const module: { exports: any } = { exports: {} };
-      const moduleFunc = new Function('exports', 'module', 'env', moduleCode);
-      moduleFunc(module.exports, module, env);
+      // Write module to temp file for proper Node.js module loading
+      // This enables AXON modules to use require/import
+      const { writeFileSync, unlinkSync } = require('fs');
+      const { tmpdir } = require('os');
+      const { join, dirname } = require('path');
+      const Module = require('module');
+      
+      const tempFile = join(tmpdir(), `connectome-axon-${componentType}-${Date.now()}.js`);
+      writeFileSync(tempFile, moduleCode);
+      
+      // Clear module cache to force reload
+      delete require.cache[tempFile];
+      
+      // Create a module with proper paths for resolution
+      const axonModule = new Module(tempFile);
+      axonModule.filename = tempFile;
+      axonModule.paths = Module._nodeModulePaths(dirname(tempFile));
+      
+      // Add connectome-ts parent directory to module paths
+      // So 'connectome-ts/...' resolves correctly
+      const connectomeParentPath = join(__dirname, '../../..');
+      axonModule.paths.unshift(connectomeParentPath);
+      
+      // Load module
+      axonModule._compile(moduleCode, tempFile);
+      const module: { exports: any } = { exports: axonModule.exports };
+      
+      // Clean up temp file after a delay
+      setTimeout(() => {
+        try {
+          delete require.cache[tempFile];
+          unlinkSync(tempFile);
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      }, 1000);
       
       // Get module exports
       const moduleExports = module.exports as any;
