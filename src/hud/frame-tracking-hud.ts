@@ -317,14 +317,14 @@ export class FrameTrackingHUD implements CompressibleHUD {
         if ((facet as any).displayName === 'tool-instruction') {
           console.log(`[HUD] Rendering tool-instruction ambient facet: ${id}`);
         }
-        // Add ambient facets as system chunks
+        // Add ambient facets - determineFacetRole will classify as system (rendered at top)
         allChunks.push(createRenderedChunk(
           rendered + '\n',
           this.estimateTokens(rendered),
           {
             facetIds: [id],
             chunkType: facet.type,
-            role: 'system',
+            role: this.determineFacetRole(facet),
             metadata: { frameSequence: -1 } // No specific frame
           }
         ));
@@ -517,19 +517,29 @@ export class FrameTrackingHUD implements CompressibleHUD {
     }
     
     // ===== LEVEL 2: Structural/Infrastructure Facets =====
-    // These facet types are always system (non-conversational)
-    const structuralTypes = [
-      'state',
-      'ambient',
-      'component-state',
+    // Facets that appear at conversation start (before frames) can be system
+    const systemPrefixTypes = [
+      'ambient',            // Tool instructions, rendered at top
       'element-tree',
-      'action-definition',
       'rendered-context',
-      'agent-lifecycle'
+      'agent-lifecycle',
+      'action-definition',  // Action definitions at top
     ];
-    
-    if (structuralTypes.includes(facet.type)) {
+
+    if (systemPrefixTypes.includes(facet.type)) {
       return 'system';
+    }
+
+    // Mid-conversation facets must be 'user' to avoid breaking LLM API
+    // (system messages only allowed at start of conversation)
+    const userContextTypes = [
+      'state',              // Tool results, component state (in frames)
+      'agent-activation',   // Activation triggers (in frames)
+      'component-state',    // Component status changes (in frames)
+    ];
+
+    if (userContextTypes.includes(facet.type)) {
+      return 'user';
     }
     
     // ===== LEVEL 3: Conversational Content (Domain-Agnostic) =====
