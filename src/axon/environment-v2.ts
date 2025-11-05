@@ -6,6 +6,8 @@
 
 import { Component } from '../spaces/component';
 import { VEILComponent, InteractiveComponent } from '../components/base-components';
+import { ControlPanelComponent } from '../widgets/control-panel';
+import { ControlPanelActionsReceptor, PanelScopeReceptor } from '../widgets/control-panel-receptors';
 import { BaseAfferent } from '../components/base-afferent';
 import { BaseReceptor, BaseEffector, BaseTransform, BaseMaintainer } from '../components/base-martem';
 import { SpaceEvent } from '../spaces/types';
@@ -63,14 +65,19 @@ export function createAxonEnvironmentV2(): IAxonEnvironmentV2 {
     Component: Component as any,
     VEILComponent: VEILComponent as any,
     InteractiveComponent: InteractiveComponent as any,
+    ControlPanelComponent: ControlPanelComponent as any,
     BaseAfferent: BaseAfferent as any,
-    
+
     // RETM base component classes
     BaseReceptor: BaseReceptor as any,
     BaseEffector: BaseEffector as any,
     BaseTransform: BaseTransform as any,
     BaseMaintainer: BaseMaintainer as any,
-    
+
+    // Control Panel receptors (built-in, ready to use)
+    ControlPanelActionsReceptor: ControlPanelActionsReceptor as any,
+    PanelScopeReceptor: PanelScopeReceptor as any,
+
     // Decorators
     persistent,
     persistable,

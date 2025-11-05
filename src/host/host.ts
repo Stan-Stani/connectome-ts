@@ -428,7 +428,7 @@ export class ConnectomeHost {
     
     console.log('🔧 Element Tree infrastructure initialized');
   }
-  
+
   /**
    * Resolve all component references and external resources
    */

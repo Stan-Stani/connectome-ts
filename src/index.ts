@@ -125,6 +125,9 @@ export { SpaceNotesComponent } from './components/space-notes';
 export { VEILComponent, InteractiveComponent } from './components/base-components';
 export { ConsoleInputReceptor, ConsoleOutputEffector } from './components/console-receptors';
 
+// Widget exports
+export * from './widgets';
+
 // AXON exports
 export { createAxonEnvironment } from './axon/environment';
 export { createAxonEnvironmentV2 } from './axon/environment-v2';

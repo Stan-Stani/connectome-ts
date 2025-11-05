@@ -52,7 +52,7 @@ export abstract class VEILComponent extends Component {
     if (!frame) {
       throw new Error(
         `VEIL operations are only allowed during frame processing. ` +
-        `Move this operation from onMount() to onFirstFrame() or an event handler. ` +
+        `Move this operation to an event handler or use deferred operations. ` +
         `Component: ${this.constructor.name}, Operation: ${operation.type}`
       );
     }
@@ -95,7 +95,7 @@ export abstract class VEILComponent extends Component {
     }
   }
   
-  private _deferredOperations?: VEILDelta[];
+  protected _deferredOperations?: VEILDelta[];
   
   /**
    * Process any deferred operations when element is added to space
@@ -104,8 +104,11 @@ export abstract class VEILComponent extends Component {
     if (this._deferredOperations && this.element?.space) {
       const space = this.element.space as Space;
       const frame = space.getCurrentFrame ? space.getCurrentFrame() : undefined;
+      console.log(`[VEILComponent.processDeferredOperations] frame exists: ${!!frame}, operations: ${this._deferredOperations.length}`);
       if (frame) {
         for (const op of this._deferredOperations) {
+          const opInfo = op.type === 'addFacet' ? `${op.type} ${(op as any).facet?.id}` : op.type;
+          console.log(`[VEILComponent.processDeferredOperations] Adding to frame:`, opInfo);
           frame.deltas.push(op);
         }
       }
@@ -214,9 +217,7 @@ export abstract class VEILComponent extends Component {
         });
         break;
       }
-      case 'action':
-      case 'action-definition':
-      case 'tool': {
+      case 'action': {
         const { toolName: attrToolName, parameters: attrParameters, ...rest } = attrs;
         const toolName = (attrToolName as string) ?? facetDef.displayName ?? 'action';
         const parameters = (attrParameters as Record<string, any>) ?? {};
@@ -233,6 +234,19 @@ export abstract class VEILComponent extends Component {
         if (Object.keys(rest).length > 0) {
           (facet.state as any).metadata = rest;
         }
+        break;
+      }
+      case 'action-definition':
+      case 'tool': {
+        // action-definition is metadata, not agent-generated content
+        // Don't use createActionFacet - preserve type as-is
+        facet = {
+          id: facetDef.id,
+          type: facetDef.type,
+          displayName: facetDef.displayName,
+          attributes: facetDef.attributes,
+          children: facetDef.children
+        } as Facet;
         break;
       }
       case 'agent-activation': {
@@ -298,10 +312,9 @@ export abstract class InteractiveComponent extends VEILComponent {
   static actions?: Record<string, string | { description: string; params?: any }>;
   
   protected actions: Map<string, (params?: any) => Promise<void>> = new Map();
-  private pendingActionDefinitions: Array<{ name: string; config?: { description?: string; params?: any } }> = [];
   
   /**
-   * Register an action handler (facet creation deferred to onFirstFrame)
+   * Register an action handler and create action-definition facet (deferred to next frame)
    */
   protected registerAction(
     name: string, 
@@ -309,23 +322,18 @@ export abstract class InteractiveComponent extends VEILComponent {
     config?: { description?: string; params?: any }
   ): void {
     this.actions.set(name, handler);
-    // Store for facet creation in onFirstFrame
-    this.pendingActionDefinitions.push({ name, config });
-  }
-  
-  /**
-   * Create action-definition facets on first frame
-   */
-  async onFirstFrame(): Promise<void> {
-    console.log(`[${this.constructor.name}] onFirstFrame called with ${this.pendingActionDefinitions.length} pending actions`);
     
-    // Create action-definition facets for all registered actions
-    for (const { name, config } of this.pendingActionDefinitions) {
-      const toolName = `${this.element.id}.${name}`;
-      this.addFacet({
+    // Defer facet creation to next frame (onMount happens outside frame processing)
+    const toolName = `${this.element.id}.${name}`;
+    if (!this._deferredOperations) {
+      this._deferredOperations = [];
+    }
+    this._deferredOperations.push({
+      type: 'addFacet',
+      facet: {
         id: `action-def-${this.element.id}-${name}`,
         type: 'action-definition',
-        content: config?.description || `@${toolName}`,
+        // No content - action-definition is metadata, not renderable to LLM
         displayName: toolName,
         attributes: {
           toolName,
@@ -334,20 +342,56 @@ export abstract class InteractiveComponent extends VEILComponent {
           parameters: config?.params || {},
           description: config?.description || `Perform ${name} action`
         }
-      });
-    }
-    
-    if (this.pendingActionDefinitions.length > 0) {
-      console.log(`[${this.constructor.name}] Created ${this.pendingActionDefinitions.length} action-definition facets`);
-    }
+      } as Facet
+    });
   }
   
   /**
-   * Subscribe to frame:start so onFirstFrame gets called
+   * Register action with instructions - creates both action-definition AND instruction facet
+   * 
+   * @param name - Action name
+   * @param handler - Action handler function
+   * @param instructions - Renderable instructions for the agent
+   * @param config - Optional config (description, params, scope)
    */
-  onMount(): void {
-    this.element.subscribe('frame:start');
-    console.log(`[${this.constructor.name}] Subscribed to frame:start for onFirstFrame`);
+  protected registerActionWithInstructions(
+    name: string,
+    handler: (params?: any) => Promise<void>,
+    instructions: string,
+    config?: { 
+      description?: string; 
+      params?: any;
+      scope?: string[];  // For control panels: ["panel:discord-control"]
+      category?: string;
+    }
+  ): void {
+    // Register the action (creates action-definition)
+    this.registerAction(name, handler, config);
+    
+    // Create instruction facet (renderable to agent)
+    const toolName = `${this.element.id}.${name}`;
+    if (!this._deferredOperations) {
+      this._deferredOperations = [];
+    }
+    this._deferredOperations.push({
+      type: 'addFacet',
+      facet: {
+        id: `tool-instruction-${this.element.id}-${name}`,
+        type: 'event',
+        displayName: 'tool-instruction',
+        content: instructions,
+        state: {
+          source: this.element.id,
+          eventType: 'tool-instruction',
+          metadata: {
+            toolName,
+            actionName: name,
+            category: config?.category || this.element.id
+          }
+        },
+        scope: config?.scope  // Optional scoping for panels
+      } as Facet
+    });
   }
   
   /**
