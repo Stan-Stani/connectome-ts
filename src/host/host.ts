@@ -175,6 +175,9 @@ export class ConnectomeHost {
       // Just mount - auto-registration happens automatically
       await space.addComponentAsync(persistenceMaintainer);
 
+      // Store reference for debug server frame deletion
+      (space as any).persistence = persistenceMaintainer;
+
       // TODO: TransitionManager disabled - using PersistenceMaintainer instead
       // this.transitionManager = new TransitionManager(space, veilState, {
       //   snapshotInterval: this.config.persistence.snapshotInterval || 100,
@@ -425,7 +428,7 @@ export class ConnectomeHost {
     
     console.log('🔧 Element Tree infrastructure initialized');
   }
-  
+
   /**
    * Resolve all component references and external resources
    */

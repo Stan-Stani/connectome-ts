@@ -104,8 +104,11 @@ export abstract class VEILComponent extends Component {
     if (this._deferredOperations && this.element?.space) {
       const space = this.element.space as Space;
       const frame = space.getCurrentFrame ? space.getCurrentFrame() : undefined;
+      console.log(`[VEILComponent.processDeferredOperations] frame exists: ${!!frame}, operations: ${this._deferredOperations.length}`);
       if (frame) {
         for (const op of this._deferredOperations) {
+          const opInfo = op.type === 'addFacet' ? `${op.type} ${(op as any).facet?.id}` : op.type;
+          console.log(`[VEILComponent.processDeferredOperations] Adding to frame:`, opInfo);
           frame.deltas.push(op);
         }
       }
@@ -339,6 +342,54 @@ export abstract class InteractiveComponent extends VEILComponent {
           parameters: config?.params || {},
           description: config?.description || `Perform ${name} action`
         }
+      } as Facet
+    });
+  }
+  
+  /**
+   * Register action with instructions - creates both action-definition AND instruction facet
+   * 
+   * @param name - Action name
+   * @param handler - Action handler function
+   * @param instructions - Renderable instructions for the agent
+   * @param config - Optional config (description, params, scope)
+   */
+  protected registerActionWithInstructions(
+    name: string,
+    handler: (params?: any) => Promise<void>,
+    instructions: string,
+    config?: { 
+      description?: string; 
+      params?: any;
+      scope?: string[];  // For control panels: ["panel:discord-control"]
+      category?: string;
+    }
+  ): void {
+    // Register the action (creates action-definition)
+    this.registerAction(name, handler, config);
+    
+    // Create instruction facet (renderable to agent)
+    const toolName = `${this.element.id}.${name}`;
+    if (!this._deferredOperations) {
+      this._deferredOperations = [];
+    }
+    this._deferredOperations.push({
+      type: 'addFacet',
+      facet: {
+        id: `tool-instruction-${this.element.id}-${name}`,
+        type: 'event',
+        displayName: 'tool-instruction',
+        content: instructions,
+        state: {
+          source: this.element.id,
+          eventType: 'tool-instruction',
+          metadata: {
+            toolName,
+            actionName: name,
+            category: config?.category || this.element.id
+          }
+        },
+        scope: config?.scope  // Optional scoping for panels
       } as Facet
     });
   }

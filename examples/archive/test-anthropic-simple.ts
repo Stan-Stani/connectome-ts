@@ -15,8 +15,7 @@ function createProvider(): LLMProvider {
   if (apiKey) {
     console.log('✅ Using Anthropic provider with API key');
     return new AnthropicProvider({
-      apiKey,
-      defaultModel: 'claude-3-5-sonnet-20241022'
+      apiKey
     });
   } else {
     console.log('⚠️  No ANTHROPIC_API_KEY found, using mock provider');

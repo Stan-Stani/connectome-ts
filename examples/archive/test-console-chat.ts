@@ -74,8 +74,7 @@ function createLLMProvider(): LLMProvider {
   
   console.log('Using Anthropic provider (Claude 3.5 Sonnet)');
   return new AnthropicProvider({
-    apiKey,
-    defaultModel: 'claude-3-5-sonnet-20241022'
+    apiKey
   });
 }
 

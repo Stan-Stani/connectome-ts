@@ -18,6 +18,7 @@ import { Element } from '../spaces/element';
 import type { Component } from '../spaces/component';
 import type { RenderedContext } from '../hud/types-v2';
 import { serializeVEILState } from '../persistence/serialization';
+import { isAfferent } from '../utils/retm-type-guards';
 
 export interface DebugServerConfig {
   enabled: boolean;
@@ -771,18 +772,99 @@ export class DebugServer {
       });
     });
 
+    // Helper function to detect MARTEM role and gather metadata
+    const getMartemMetadata = (component: Component, space: Space) => {
+      const metadata: any = { martemRole: null };
+
+      // Check modulators
+      if ((space as any).modulators?.includes(component)) {
+        metadata.martemRole = 'Modulator';
+      }
+
+      // Check afferents using type guard
+      if (isAfferent(component)) {
+        metadata.martemRole = 'Afferent';
+        // Add afferent-specific metadata
+        try {
+          const status = component.getStatus();
+          if (status) {
+            metadata.status = status;
+          }
+        } catch (e) {
+          // Ignore errors getting status
+        }
+        if (typeof component.getMetrics === 'function') {
+          try {
+            const metrics = component.getMetrics();
+            if (metrics) {
+              metadata.metrics = metrics;
+            }
+          } catch (e) {
+            // Ignore errors getting metrics
+          }
+        }
+      }
+
+      // Check receptors and gather topics
+      if ((space as any).receptors) {
+        const topics: string[] = [];
+        for (const [topic, receptors] of (space as any).receptors.entries()) {
+          if (receptors.includes(component)) {
+            topics.push(topic);
+          }
+        }
+        if (topics.length > 0) {
+          metadata.martemRole = 'Receptor';
+          metadata.topics = topics;
+        }
+      }
+
+      // Check transforms
+      if ((space as any).transforms?.includes(component)) {
+        metadata.martemRole = 'Transform';
+      }
+
+      // Check effectors
+      if ((space as any).effectors?.includes(component)) {
+        metadata.martemRole = 'Effector';
+      }
+
+      // Check maintainers
+      if ((space as any).maintainers?.includes(component)) {
+        metadata.martemRole = 'Maintainer';
+      }
+
+      // Add common MARTEM properties if this is a MARTEM component
+      if (metadata.martemRole) {
+        if ((component as any).priority !== undefined) {
+          metadata.priority = (component as any).priority;
+        }
+        if ((component as any).facetFilters) {
+          metadata.facetFilters = (component as any).facetFilters;
+        }
+      }
+
+      return metadata;
+    };
+
     this.app.get('/api/state', (_req, res) => {
       try {
         // Serialize space structure without circular references
         const spaceInfo = {
           id: this.space.id,
           name: this.space.name,
+          components: this.space.components.map(c => ({
+            type: c.constructor.name,
+            id: c.element?.id || 'unknown',
+            ...getMartemMetadata(c, this.space)
+          })),
           children: this.space.children.map(child => ({
             id: child.id,
             name: child.name,
             components: child.components.map(c => ({
               type: c.constructor.name,
-              id: (c as any).id || 'unknown'
+              id: c.element?.id || 'unknown',
+              ...getMartemMetadata(c, this.space)
             }))
           })),
           componentCount: this.space.components.length,

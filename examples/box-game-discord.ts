@@ -1563,8 +1563,7 @@ async function main() {
   // Create LLM provider
   const { AnthropicProvider } = await import('../src/llm/anthropic-provider');
   const llmProvider = new AnthropicProvider({
-    apiKey: anthropicApiKey,
-    defaultModel: 'claude-3-5-sonnet-20241022'
+    apiKey: anthropicApiKey
   });
 
   // Create application
