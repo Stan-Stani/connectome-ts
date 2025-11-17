@@ -18,6 +18,11 @@
  *   --skip-connect    Skip debug MCP connection
  */
 
+// Load environment variables from .env file
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+dotenv.config({ path: path.join(__dirname, '../../.env') });
+
 import { TestRunner, createTestContext, connectDiscord, disconnectDiscord, checkDebugServer } from './test-framework';
 import { ALL_TESTS, TEST_SUITES, CRITICAL_TESTS, REAL_TESTS, getTestsByPattern } from './tests';
 

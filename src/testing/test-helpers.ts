@@ -180,17 +180,10 @@ export class DebugServerClient {
   }
 
   async getElementTree(elementId?: string, depth?: number): Promise<any> {
-    let url = `${this.baseUrl}/api/elements/tree`;
-    const params = new URLSearchParams();
-    if (elementId) params.append('elementId', elementId);
-    if (depth !== undefined) params.append('depth', depth.toString());
-    if (params.toString()) url += `?${params}`;
-
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Debug server returned ${response.status}`);
-    }
-    return response.json();
+    // Use /api/state to get the space structure
+    // The debug server returns space.children which is the element tree
+    const state = await this.getState();
+    return state.space || {};
   }
 
   async getElement(elementId: string): Promise<any> {
@@ -202,21 +195,71 @@ export class DebugServerClient {
   }
 
   async getAgents(): Promise<any[]> {
-    const response = await fetch(`${this.baseUrl}/api/agents`);
-    if (!response.ok) {
-      throw new Error(`Debug server returned ${response.status}`);
+    // Agents are elements with agent components
+    // We can extract them from the space structure
+    const state = await this.getState();
+    const agents: any[] = [];
+
+    // Check top-level space components for agents
+    if (state.space?.components) {
+      const agentComps = state.space.components.filter((c: any) =>
+        c.type?.toLowerCase().includes('agent')
+      );
+      agents.push(...agentComps.map((c: any) => ({
+        id: c.id,
+        name: c.type,
+        type: 'agent',
+        status: 'active'
+      })));
     }
-    const data = await response.json();
-    return data.agents || [];
+
+    // Check children for agent elements
+    if (state.space?.children) {
+      const agentElements = state.space.children.filter((e: any) =>
+        e.name?.toLowerCase().includes('agent') ||
+        e.components?.some((c: any) => c.type?.toLowerCase().includes('agent'))
+      );
+      agents.push(...agentElements.map((e: any) => ({
+        id: e.id,
+        name: e.name,
+        type: 'agent',
+        status: 'active'
+      })));
+    }
+
+    return agents;
   }
 
   async getComponents(): Promise<any[]> {
-    const response = await fetch(`${this.baseUrl}/api/components`);
-    if (!response.ok) {
-      throw new Error(`Debug server returned ${response.status}`);
+    // Get all components from the space structure
+    const state = await this.getState();
+    const components: any[] = [];
+
+    // Add top-level space components
+    if (state.space?.components) {
+      components.push(...state.space.components.map((c: any) => ({
+        name: c.type,
+        type: c.martemPhase || 'component',
+        id: c.id,
+        elementId: c.id
+      })));
     }
-    const data = await response.json();
-    return data.components || [];
+
+    // Add components from all child elements
+    if (state.space?.children) {
+      for (const child of state.space.children) {
+        if (child.components) {
+          components.push(...child.components.map((c: any) => ({
+            name: c.type,
+            type: c.martemPhase || 'component',
+            id: c.id,
+            elementId: child.id
+          })));
+        }
+      }
+    }
+
+    return components;
   }
 }
 
