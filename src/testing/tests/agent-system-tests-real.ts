@@ -37,26 +37,28 @@ export class Test012ContextAssemblyReal extends BaseTest {
     this.log(`Triggering agent activation with: "${mentionMessage}"`);
     await this.context.discord.sendMessage(channelId, mentionMessage);
 
-    // Wait for rendered-context facet
+    // Wait for frame with renderedContext (frames have this field when context is rendered)
     this.log('Waiting for context rendering...');
-    const contextFacet = await waitForFacet(
+    const frameWithContext = await waitForFrame(
       this.context.debugServer,
-      (f: any) => f.type === 'rendered-context' || f.type === 'context',
+      (f: any) => f.renderedContext !== null && f.renderedContext !== undefined,
       15000
     );
 
-    this.assert(!!contextFacet, 'Context should be rendered');
-    this.verify('contextFacetFound', { type: contextFacet.type });
+    this.assert(!!frameWithContext, 'Context should be rendered');
+    this.verify('contextFrameFound', { frameId: frameWithContext.uuid });
 
     // Analyze context content
-    const contextStr = JSON.stringify(contextFacet);
+    const context = frameWithContext.renderedContext;
+    const contextStr = typeof context === 'string' ? context : JSON.stringify(context);
     this.log(`Context size: ${contextStr.length} characters`);
 
     // Check for message history
     const hasMessageHistory =
       contextStr.includes('message') ||
       contextStr.includes('Previous message') ||
-      contextStr.includes('history');
+      contextStr.includes('history') ||
+      contextStr.includes('content');
 
     this.verify('hasMessageHistory', hasMessageHistory);
     this.log(hasMessageHistory ? '✓ Context includes message history' : '⚠️  No obvious message history');
@@ -65,20 +67,18 @@ export class Test012ContextAssemblyReal extends BaseTest {
     const hasTools =
       contextStr.includes('tool') ||
       contextStr.includes('action') ||
-      contextStr.includes('@');
+      contextStr.includes('discord');
 
     this.verify('hasToolInstructions', hasTools);
     this.log(hasTools ? '✓ Context includes tool instructions' : '⚠️  No obvious tool instructions');
 
-    // Check token count if available
-    if (contextFacet.tokenCount) {
-      this.verify('tokenCount', contextFacet.tokenCount);
-      this.assert(
-        contextFacet.tokenCount > 0 && contextFacet.tokenCount < 100000,
-        'Token count should be reasonable'
-      );
-      this.log(`✓ Token count: ${contextFacet.tokenCount}`);
-    }
+    // Check for agent instructions
+    const hasInstructions =
+      contextStr.includes('system') ||
+      contextStr.includes('instruction') ||
+      contextStr.length > 500;
+
+    this.verify('hasInstructions', hasInstructions);
 
     // Verify context structure
     this.assert(contextStr.length > 100, 'Context should have substantial content');

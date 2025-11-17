@@ -28,12 +28,12 @@ export class Test015ElementHierarchyReal extends BaseTest {
     this.assert(!!tree, 'Should have element tree');
     this.verify('treeReceived', { rootId: tree.id, rootName: tree.name });
 
-    // Verify root is Space
+    // Verify root is Space (name is 'root', not 'Space')
     this.assert(
-      tree.name === 'Space' || tree.type === 'space' || tree.id === 'root',
+      tree.name === 'root' || tree.id === 'root' || tree.name?.toLowerCase().includes('root'),
       'Root should be Space'
     );
-    this.verify('rootElement', tree.name || tree.type);
+    this.verify('rootElement', { name: tree.name, id: tree.id });
 
     // Verify tree has children
     const children = tree.children || [];
@@ -208,25 +208,23 @@ export class Test017EventPropagationReal extends BaseTest {
       hasPayload: !!discordEvent.payload
     });
 
-    // Verify multiple components processed the event
-    this.log('Checking component processing...');
-    const operations = frame.operations || [];
-    this.assert(operations.length > 0, 'Should have operations processing event');
-    this.verify('operationCount', operations.length);
-
-    // Check for sequential processing
-    const componentNames = operations.map((op: any) => op.component);
-    const uniqueComponents = new Set(componentNames);
-    this.log(`Event processed by ${uniqueComponents.size} unique components`);
-    this.verify('componentsProcessed', uniqueComponents.size);
-
-    // Verify event led to state changes
+    // Verify event led to state changes (deltas)
     this.log('Verifying state changes...');
-    const hasDeltas = frame.deltas && frame.deltas.length > 0;
-    if (hasDeltas) {
-      this.verify('stateChangesOccurred', frame.deltas.length);
-      this.log(`✓ Event caused ${frame.deltas.length} state changes`);
-    }
+    const deltas = frame.deltas || [];
+    this.assert(deltas.length > 0, 'Should have deltas from event processing');
+    this.verify('deltaCount', deltas.length);
+    this.log(`✓ Event caused ${deltas.length} state changes`);
+
+    // Check delta types
+    const deltaTypes = deltas.map((d: any) => d.facet?.type).filter(Boolean);
+    const uniqueTypes = new Set(deltaTypes);
+    this.log(`Deltas produced: ${Array.from(uniqueTypes).join(', ')}`);
+    this.verify('deltaTypes', Array.from(uniqueTypes));
+
+    // Verify event processing created facets
+    const hasFacetDeltas = deltas.some((d: any) => d.facet);
+    this.assert(hasFacetDeltas, 'Deltas should include facet operations');
+    this.verify('hasFacetDeltas', hasFacetDeltas);
 
     this.log('✅ Event propagation verified');
   }

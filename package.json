@@ -32,7 +32,14 @@
     "session-server:mcp": "SESSION_SERVER_PORT=3101 ts-node src/testing/start-session-server.ts",
     "debug-mcp": "ts-node src/testing/debug-mcp-stdio.ts",
     "mcp-server": "ts-node src/testing/mcp-stdio-server.ts",
-    "session-cli": "ts-node src/testing/session-cli.ts"
+    "session-cli": "ts-node src/testing/session-cli.ts",
+    "test:phase0": "ts-node src/testing/run-phase0-tests.ts",
+    "test:phase0:priority": "ts-node src/testing/run-phase0-tests.ts --priority",
+    "test:phase0:real": "ts-node src/testing/run-phase0-tests.ts --real-only",
+    "test:phase0:skip-connect": "ts-node src/testing/run-phase0-tests.ts --skip-connect",
+    "test:regression": "./scripts/run-regression-tests.sh",
+    "test:regression:priority": "./scripts/run-regression-tests.sh --priority",
+    "test:regression:real": "./scripts/run-regression-tests.sh --real-only"
   },
   "keywords": [
     "llm",
@@ -51,6 +58,7 @@
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "chokidar": "^3.5.3",
+    "discord.js": "^14.24.2",
     "dotenv": "^17.2.2",
     "esbuild": "^0.19.11",
     "eslint": "^8.0.0",

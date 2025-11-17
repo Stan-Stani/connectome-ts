@@ -124,7 +124,7 @@ export class DebugServerClient {
   }
 
   async getVEILState(): Promise<any> {
-    const response = await fetch(`${this.baseUrl}/api/veil`);
+    const response = await fetch(`${this.baseUrl}/api/facets`);
     if (!response.ok) {
       throw new Error(`Debug server returned ${response.status}`);
     }
@@ -317,8 +317,10 @@ export async function waitForFacet(
 
   while (Date.now() - startTime < timeout) {
     const veilState = await debugClient.getVEILState();
+
+    // Facets come as array of [key, facetObject] tuples from the API
     const facets = Array.isArray(veilState.facets)
-      ? veilState.facets
+      ? veilState.facets.map((tuple: any) => tuple[1]) // Extract facet object from tuple
       : Object.values(veilState.facets || {});
 
     const found = facets.find(predicate);

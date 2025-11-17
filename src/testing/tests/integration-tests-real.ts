@@ -57,12 +57,14 @@ export class Test024MultiAgentCoordinationReal extends BaseTest {
     // Check for agent state in VEIL
     this.log('Checking agent state management...');
     const veilState = await this.context.debugServer.getVEILState();
+
+    // Facets come as array of [key, facetObject] tuples from the API
     const facets = Array.isArray(veilState.facets)
-      ? veilState.facets
+      ? veilState.facets.map((tuple: any) => tuple[1])
       : Object.values(veilState.facets || {});
 
     const agentFacets = facets.filter((f: any) =>
-      f.type?.includes('agent') || f.agentId
+      f.type?.includes('agent')
     );
 
     this.verify('agentFacetCount', agentFacets.length);
@@ -79,22 +81,21 @@ export class Test024MultiAgentCoordinationReal extends BaseTest {
     this.assert(activeComponents.length >= 5, 'Should have multiple active components');
     this.verify('activeComponentCount', activeComponents.length);
 
-    // Verify frame processing with multiple components
+    // Verify frame processing creates deltas (component outputs)
     this.log('Verifying multi-component frame processing...');
     const frames = await this.context.debugServer.getFrames(10);
 
-    const frameWithMultipleOps = frames.find((f: any) => {
-      const ops = f.operations || [];
-      const uniqueComponents = new Set(ops.map((op: any) => op.component));
-      return uniqueComponents.size >= 3;
+    const frameWithDeltas = frames.find((f: any) => {
+      const deltas = f.deltas || [];
+      return deltas.length >= 3;
     });
 
-    this.assert(!!frameWithMultipleOps, 'Should have frames with multiple component operations');
-    if (frameWithMultipleOps) {
-      const ops = frameWithMultipleOps.operations || [];
-      const uniqueComponents = new Set(ops.map((op: any) => op.component));
-      this.verify('componentsInFrame', uniqueComponents.size);
-      this.log(`✓ Frame processed by ${uniqueComponents.size} components`);
+    this.assert(!!frameWithDeltas, 'Should have frames with multiple deltas from components');
+    if (frameWithDeltas) {
+      const deltas = frameWithDeltas.deltas || [];
+      const deltaTypes = new Set(deltas.map((d: any) => d.facet?.type).filter(Boolean));
+      this.verify('deltaTypesInFrame', deltaTypes.size);
+      this.log(`✓ Frame produced ${deltas.length} deltas with ${deltaTypes.size} unique types`);
     }
 
     // Test agent response

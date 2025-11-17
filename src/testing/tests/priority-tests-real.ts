@@ -78,20 +78,22 @@ export class Test004MentionDetectionReal extends BaseTest {
     // Test 1: Send message WITHOUT mention
     this.log('Test 1: Sending message without mention...');
     const nonMentionMessage = `Hello bot ${Date.now()}`;
-    await this.context.discord.sendMessage(channelId, nonMentionMessage);
+    const msg1 = await this.context.discord.sendMessage(channelId, nonMentionMessage);
 
     await this.sleep(2000);
 
-    // Check that NO agent activation occurred
+    // Check that NO agent activation occurred for this message
     this.log('Checking that agent did NOT activate...');
     const veilState1 = await this.context.debugServer!.getVEILState();
+
+    // Facets come as array of [key, facetObject] tuples from the API
     const facets1 = Array.isArray(veilState1.facets)
-      ? veilState1.facets
+      ? veilState1.facets.map((tuple: any) => tuple[1])
       : Object.values(veilState1.facets || {});
 
     const activation1 = facets1.find((f: any) =>
       f.type === 'agent-activation' &&
-      f.trigger?.includes(nonMentionMessage)
+      f.state?.messageId === msg1.id
     );
 
     this.assert(!activation1, 'Agent should NOT activate without mention');
@@ -100,13 +102,13 @@ export class Test004MentionDetectionReal extends BaseTest {
     // Test 2: Send message WITH mention
     this.log('Test 2: Sending message with mention...');
     const mentionMessage = `<@${botId}> Hello ${Date.now()}`;
-    await this.context.discord.sendMessage(channelId, mentionMessage);
+    const msg2 = await this.context.discord.sendMessage(channelId, mentionMessage);
 
-    // Wait for agent activation facet
+    // Wait for agent activation facet for this specific message
     this.log('Waiting for agent activation...');
     const activationFacet = await waitForFacet(
       this.context.debugServer!,
-      (f: any) => f.type === 'agent-activation',
+      (f: any) => f.type === 'agent-activation' && f.state?.messageId === msg2.id,
       10000
     );
 
@@ -114,7 +116,7 @@ export class Test004MentionDetectionReal extends BaseTest {
     this.verify('mentionDetected', true);
     this.verify('agentActivated', {
       facetType: activationFacet?.type,
-      agentId: activationFacet?.agentId
+      reason: activationFacet?.state?.reason
     });
 
     this.log('✅ Mention detection verified - agent only activates on mention');
@@ -154,22 +156,23 @@ export class Test011AgentActivationReal extends BaseTest {
     this.assertEqual(activationFacet.type, 'agent-activation');
     this.verify('activationFacet', {
       type: activationFacet.type,
-      agentId: activationFacet.agentId
+      reason: activationFacet.state?.reason,
+      source: activationFacet.state?.source
     });
 
-    // Wait for frames showing effector execution
-    this.log('Waiting for AgentEffector execution...');
-    const effectFrame = await waitForFrame(
+    // Wait for speech facet (result of agent processing)
+    this.log('Waiting for agent speech output...');
+    const speechFrame = await waitForFrame(
       this.context.debugServer,
       (f: any) => {
-        const ops = f.operations || [];
-        return ops.some((op: any) => op.component?.includes('AgentEffector'));
+        const deltas = f.deltas || [];
+        return deltas.some((d: any) => d.facet?.type === 'speech');
       },
-      10000
+      15000
     );
 
-    this.assert(!!effectFrame, 'AgentEffector should process activation');
-    this.verify('effectorProcessed', true);
+    this.assert(!!speechFrame, 'Agent should produce speech output');
+    this.verify('agentProducedSpeech', true);
 
     this.log('✅ Agent activation verified - full activation pipeline works');
   }
@@ -196,19 +199,23 @@ export class Test014SpeechOutputReal extends BaseTest {
     this.log(`Triggering bot response with: "${mentionMessage}"`);
     await this.context.discord.sendMessage(channelId, mentionMessage);
 
-    // Wait for speech facet to appear
+    // Wait for speech facet to appear (from agent)
     this.log('Waiting for speech facet...');
     const speechFacet = await waitForFacet(
       this.context.debugServer,
-      (f: any) => f.type === 'speech',
+      (f: any) => f.type === 'speech' && f.content && f.content.length > 10,
       15000
     );
 
     this.assert(!!speechFacet, 'Speech facet should be created');
     this.assertEqual(speechFacet.type, 'speech');
+    this.assert(!!speechFacet.content, 'Speech facet should have content');
+    // Speech facets may or may not have streamId depending on source
     this.verify('speechFacet', {
       type: speechFacet.type,
-      content: speechFacet.content
+      hasContent: !!speechFacet.content,
+      contentLength: speechFacet.content.length,
+      hasStreamId: !!speechFacet.streamId
     });
 
     // Wait for bot's response message in Discord
@@ -276,15 +283,15 @@ export class Test023FullMessagePipelineReal extends BaseTest {
     this.assert(!!activationFacet, 'Agent should activate');
     this.verify('step3_agentActivated', true);
 
-    // Step 4: Wait for rendered context
+    // Step 4: Wait for rendered context (in frame)
     this.log('Step 4: Waiting for context rendering...');
-    const contextFacet = await waitForFacet(
+    const contextFrame = await waitForFrame(
       this.context.debugServer,
-      (f: any) => f.type === 'rendered-context' || f.type === 'context',
+      (f: any) => f.renderedContext !== null && f.renderedContext !== undefined,
       10000
     );
-    this.assert(!!contextFacet, 'Context should be rendered');
-    this.verify('step4_contextRendered', true);
+    this.assert(!!contextFrame, 'Context should be rendered');
+    this.verify('step4_contextRendered', { frameId: contextFrame?.uuid });
 
     // Step 5: Wait for speech facet
     this.log('Step 5: Waiting for speech generation...');

@@ -69,27 +69,28 @@ export class Test021ModuleLoadingReal extends BaseTest {
       this.log(`✓ Discord receptor loaded: ${discordReceptor.name}`);
     }
 
-    // Verify module execution by checking recent frames
+    // Verify module execution by checking recent frames for Discord events
     this.log('Verifying module components are executing...');
     const frames = await this.context.debugServer.getFrames(10);
 
-    const framesWithDiscordOps = frames.filter((f: any) => {
-      const ops = f.operations || [];
-      return ops.some((op: any) =>
-        op.component?.toLowerCase().includes('discord')
+    const framesWithDiscordEvents = frames.filter((f: any) => {
+      const events = f.events || [];
+      return events.some((e: any) =>
+        e.topic?.toLowerCase().includes('discord') ||
+        e.source?.elementId?.toLowerCase().includes('discord')
       );
     });
 
     this.assert(
-      framesWithDiscordOps.length > 0,
+      framesWithDiscordEvents.length > 0,
       'Discord components should be executing in frames'
     );
-    this.verify('moduleComponentsExecuting', framesWithDiscordOps.length);
-    this.log(`✓ Found ${framesWithDiscordOps.length} frames with Discord component execution`);
+    this.verify('moduleComponentsExecuting', framesWithDiscordEvents.length);
+    this.log(`✓ Found ${framesWithDiscordEvents.length} frames with Discord events`);
 
     // Check for proper TypeScript transpilation (inferred from execution)
     this.log('Verifying TypeScript transpilation...');
-    const componentsWork = discordComponents.length > 0 && framesWithDiscordOps.length > 0;
+    const componentsWork = discordComponents.length > 0 && framesWithDiscordEvents.length > 0;
     this.assert(componentsWork, 'Transpiled components should be working');
     this.verify('transpilationSuccessful', true);
 
