@@ -144,8 +144,14 @@ export class Element {
   
   /**
    * Add a child element
+   * @deprecated FLEX Phase 1: Tree hierarchy is deprecated. Use Space.addComponentDirect() instead.
    */
   addChild(child: Element): void {
+    // FLEX Phase 1: Deprecation warning
+    if (process.env.FLEX_DEPRECATION_WARNINGS !== 'false') {
+      console.warn(`[FLEX Phase 1 Deprecation] Element.addChild() is deprecated. Tree hierarchy will be removed in Phase 2. Use Space.addComponentDirect() instead.`);
+    }
+
     // Check if child already exists (prevent duplicates)
     if (this._children.includes(child)) {
       console.warn(`[Element.addChild] Element ${child.id} already exists in ${this.id}, skipping`);
@@ -195,8 +201,13 @@ export class Element {
   
   /**
    * Remove a child element
+   * @deprecated FLEX Phase 1: Tree hierarchy is deprecated.
    */
   removeChild(child: Element): boolean {
+    if (process.env.FLEX_DEPRECATION_WARNINGS !== 'false') {
+      console.warn(`[FLEX Phase 1 Deprecation] Element.removeChild() is deprecated. Tree hierarchy will be removed in Phase 2.`);
+    }
+
     const index = this._children.indexOf(child);
     if (index === -1) return false;
     
@@ -216,15 +227,23 @@ export class Element {
   
   /**
    * Find a child element by name (direct children only)
+   * @deprecated FLEX Phase 1: Tree navigation is deprecated.
    */
   findChild(name: string): Element | null {
+    if (process.env.FLEX_DEPRECATION_WARNINGS !== 'false') {
+      console.warn(`[FLEX Phase 1 Deprecation] Element.findChild() is deprecated. Use Space.getDirectComponent() instead.`);
+    }
     return this._children.find(child => child.name === name) || null;
   }
-  
+
   /**
    * Find an element by name in the entire subtree
+   * @deprecated FLEX Phase 1: Tree navigation is deprecated.
    */
   findInChildren(name: string): Element | null {
+    if (process.env.FLEX_DEPRECATION_WARNINGS !== 'false') {
+      console.warn(`[FLEX Phase 1 Deprecation] Element.findInChildren() is deprecated. Tree navigation will be removed in Phase 2.`);
+    }
     for (const child of this._children) {
       if (child.name === name) return child;
       const found = child.findInChildren(name);

@@ -226,7 +226,16 @@ export class ElementTreeTransform extends BaseTransform {
  */
 export class ElementTreeMaintainer extends BaseMaintainer {
   private elementCache = new Map<string, Element>();
-  
+
+  /**
+   * FLEX Phase 1: Enable direct mounting (bypasses tree hierarchy)
+   * When true, components are registered directly with Space
+   */
+  private useDirectMount: boolean = false;
+
+  // FLEX Phase 1: Renamed from 'space' to avoid conflict with Component.space getter
+  private rootSpace: Element;
+
   // Track operations for this frame
   private pendingOperations: Array<{
     type: 'create' | 'destroy' | 'restore' | 'add-component';
@@ -234,12 +243,28 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     elementId?: string;
     request?: any;
   }> = [];
-  
-  constructor(private space: Element) {
+
+  constructor(space: Element) {
     super();
+    this.rootSpace = space;
     // Register the space itself
     this.elementCache.set('root', space);
     this.elementCache.set(space.id, space);
+  }
+
+  /**
+   * FLEX Phase 1: Enable direct mounting mode
+   */
+  enableDirectMount(): void {
+    this.useDirectMount = true;
+    console.log('[ElementTreeMaintainer] Direct mounting enabled (FLEX Phase 1)');
+  }
+
+  /**
+   * FLEX Phase 1: Check if direct mounting is enabled
+   */
+  isDirectMountEnabled(): boolean {
+    return this.useDirectMount;
   }
   
   /**
@@ -249,8 +274,8 @@ export class ElementTreeMaintainer extends BaseMaintainer {
   resyncCache(): void {
     // console.log(`[ElementTreeMaintainer] Resyncing element cache...`);
     this.elementCache.clear();
-    this.elementCache.set('root', this.space);
-    this.elementCache.set(this.space.id, this.space);
+    this.elementCache.set('root', this.rootSpace);
+    this.elementCache.set(this.rootSpace.id, this.rootSpace);
     
     // Recursively add all children
     const syncChildren = (parent: Element) => {
@@ -263,7 +288,7 @@ export class ElementTreeMaintainer extends BaseMaintainer {
       }
     };
     
-    syncChildren(this.space);
+    syncChildren(this.rootSpace);
     // console.log(`[ElementTreeMaintainer] Cache resynced with ${this.elementCache.size} elements`);
   }
   
@@ -394,7 +419,7 @@ export class ElementTreeMaintainer extends BaseMaintainer {
       if (continuationTag) {
         events.push({
           topic: 'veil:operation',
-          source: this.space.getRef(),
+          source: this.rootSpace.getRef(),
           timestamp: Date.now(),
           payload: {
             operation: {
@@ -513,7 +538,7 @@ export class ElementTreeMaintainer extends BaseMaintainer {
           };
           
           // Apply immediately using Space's VEIL state
-          const space = this.space as any;
+          const space = this.rootSpace as any;
           if (space.getVEILState) {
             space.getVEILState().applyDeltasDirect([stateDelta]);
           }
@@ -583,7 +608,7 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     // Mark element-tree facet as inactive
     events.push({
       topic: 'veil:operation',
-      source: this.space.getRef(),
+      source: this.rootSpace.getRef(),
       timestamp: Date.now(),
       payload: {
         operation: {
@@ -794,7 +819,7 @@ export class ElementTreeMaintainer extends BaseMaintainer {
         
         // Also register receptors if module exports them
         if (moduleExportsObject && moduleExportsObject.receptors) {
-          const space = this.space as any; // Space has addReceptor method
+          const space = this.rootSpace as any; // Space has addReceptor method
           for (const [receptorName, ReceptorClass] of Object.entries(moduleExportsObject.receptors)) {
             if (typeof ReceptorClass === 'function') {
               const receptor = new (ReceptorClass as any)();

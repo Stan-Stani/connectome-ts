@@ -1,4 +1,5 @@
 import { Element } from './element';
+import { Component } from './component';
 import { SpaceEvent, FrameStartEvent, FrameEndEvent, StreamRef, ElementRef } from './types';
 import { VEILStateManager } from '../veil/veil-state';
 import { Frame, Facet, VEILDelta, AgentInfo, createDefaultTransition } from '../veil/types';
@@ -104,7 +105,15 @@ export class Space extends Element {
   private transforms: Transform[] = [];
   private effectors: Effector[] = [];
   private maintainers: Maintainer[] = [];
-  
+
+  // FLEX Phase 1: Flat component list (NEW)
+  // Components registered directly with Space, bypassing tree hierarchy
+  private directComponents: Component[] = [];
+  private directComponentRegistry: Map<string, Component> = new Map();
+
+  // FLEX Phase 1: Direct mounting flag (enables flat list behavior)
+  private useDirectMounting: boolean = false;
+
   // Lifecycle ID - persists for the entire life of this Space instance
   // Generated on creation, never changes, used to isolate deltas/snapshots
   public readonly lifecycleId: string;
@@ -239,7 +248,93 @@ export class Space extends Element {
     }
     this.maintainers.push(maintainer);
   }
-  
+
+  // ========== FLEX Phase 1: Direct Component Management ==========
+
+  /**
+   * Enable direct mounting mode (FLEX Phase 1)
+   * When enabled, components are registered directly with Space rather than through tree
+   */
+  enableDirectMounting(): void {
+    this.useDirectMounting = true;
+    console.log('[Space] Direct mounting enabled (FLEX Phase 1)');
+  }
+
+  /**
+   * Add a component directly to the Space's flat component list (FLEX Phase 1)
+   * This bypasses the element tree hierarchy
+   *
+   * @param component - Component to add
+   * @param componentId - Optional stable ID for the component
+   * @returns The component instance
+   */
+  addComponentDirect<T extends Component>(component: T, componentId?: string): T {
+    // Generate stable ID if not provided
+    const id = componentId || `component-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+    // Check for duplicate
+    if (this.directComponentRegistry.has(id)) {
+      console.warn(`[Space.addComponentDirect] Component ${id} already registered, skipping`);
+      return this.directComponentRegistry.get(id) as T;
+    }
+
+    // Add component's space reference (NEW: direct access)
+    (component as any)._space = this;
+    (component as any)._componentId = id;
+
+    // Register component
+    this.directComponents.push(component);
+    this.directComponentRegistry.set(id, component);
+
+    // Auto-register MARTEM components
+    if (isModulator(component)) {
+      this.addModulator(component);
+    }
+    if (isReceptor(component)) {
+      (component as any).element = this; // Mount to Space for MARTEM
+      this.addReceptor(component);
+    }
+    if (isTransform(component)) {
+      (component as any).element = this;
+      this.addTransform(component);
+    }
+    if (isEffector(component)) {
+      (component as any).element = this;
+      this.addEffector(component);
+    }
+    if (isMaintainer(component)) {
+      (component as any).element = this;
+      this.addMaintainer(component);
+    }
+
+    console.log(`[Space.addComponentDirect] Registered ${component.constructor.name} (${id})`);
+
+    return component;
+  }
+
+  /**
+   * Get all directly mounted components
+   */
+  getDirectComponents(): ReadonlyArray<Component> {
+    return this.directComponents;
+  }
+
+  /**
+   * Get a directly mounted component by ID
+   */
+  getDirectComponent(id: string): Component | undefined {
+    return this.directComponentRegistry.get(id);
+  }
+
+  /**
+   * Check if direct mounting is enabled
+   */
+  isDirectMountingEnabled(): boolean {
+    return this.useDirectMounting;
+  }
+
+  // ========== End FLEX Phase 1 Methods ==========
+
   /**
    * Attach an external debug observer. Observers are notified about frame
    * lifecycle events and outgoing agent frames to feed the debug UI.
@@ -490,8 +585,26 @@ export class Space extends Element {
   /**
    * Deliver event to subscribed child elements
    */
+  /**
+   * FLEX Phase 1: Dual event delivery
+   * Delivers events to both directly mounted components AND tree-based elements
+   * This ensures compatibility during the tree collapse migration
+   */
   private async deliverEventToChildren(event: SpaceEvent): Promise<void> {
-    // Iterate through all children and deliver to subscribed ones
+    // FLEX Phase 1: Deliver to directly mounted components FIRST
+    if (this.useDirectMounting && this.directComponents.length > 0) {
+      for (const component of this.directComponents) {
+        if (component.enabled) {
+          try {
+            await component.handleEvent(event);
+          } catch (error) {
+            console.error(`[Space] Error delivering event ${event.topic} to direct component ${component.constructor.name}:`, error);
+          }
+        }
+      }
+    }
+
+    // Legacy: Deliver to tree-based elements (compatibility mode)
     for (const child of this.children) {
       if (child.isSubscribedTo(event.topic)) {
         console.log(`[Space] Delivering ${event.topic} to ${child.name}`);

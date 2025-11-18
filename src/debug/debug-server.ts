@@ -849,6 +849,10 @@ export class DebugServer {
 
     this.app.get('/api/state', (_req, res) => {
       try {
+        // FLEX Phase 1: Include directly mounted components
+        const directComponents = (this.space as any).getDirectComponents?.() || [];
+        const useDirectMounting = (this.space as any).isDirectMountingEnabled?.() || false;
+
         // Serialize space structure without circular references
         const spaceInfo = {
           id: this.space.id,
@@ -858,6 +862,13 @@ export class DebugServer {
             id: c.element?.id || 'unknown',
             ...getMartemMetadata(c, this.space)
           })),
+          // FLEX Phase 1: Add directly mounted components
+          directComponents: directComponents.map((c: any) => ({
+            type: c.constructor.name,
+            id: c.componentId || 'unknown',
+            ...getMartemMetadata(c, this.space)
+          })),
+          useDirectMounting,
           children: this.space.children.map(child => ({
             id: child.id,
             name: child.name,
@@ -868,6 +879,7 @@ export class DebugServer {
             }))
           })),
           componentCount: this.space.components.length,
+          directComponentCount: directComponents.length, // FLEX Phase 1
           receptorCount: (this.space as any).receptors?.size || 0,
           effectorCount: (this.space as any).effectors?.length || 0,
           transformCount: (this.space as any).transforms?.length || 0,

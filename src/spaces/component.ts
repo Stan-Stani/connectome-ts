@@ -17,7 +17,20 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
    * The element this component is attached to
    */
   element!: Element;
-  
+
+  /**
+   * FLEX Phase 1: Direct reference to Space (NEW)
+   * For components registered via addComponentDirect()
+   * @internal
+   */
+  private _space?: Space;
+
+  /**
+   * FLEX Phase 1: Component ID for direct mounting
+   * @internal
+   */
+  private _componentId?: string;
+
   /**
    * Whether this component is enabled
    */
@@ -27,7 +40,35 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
    * Track if we've seen the first frame
    */
   private _firstFrameSeen: boolean = false;
-  
+
+  /**
+   * FLEX Phase 1: Get the Space this component is registered with
+   * Returns direct Space reference if available, otherwise traverses tree
+   */
+  get space(): Space {
+    // If directly mounted, use direct reference
+    if (this._space) {
+      return this._space;
+    }
+
+    // Fall back to tree traversal (compatibility mode)
+    if (this.element) {
+      const space = this.element.findSpace();
+      if (space) {
+        return space as Space;
+      }
+    }
+
+    throw new Error(`Component ${this.constructor.name} not mounted to Space`);
+  }
+
+  /**
+   * FLEX Phase 1: Get the component ID (for directly mounted components)
+   */
+  get componentId(): string | undefined {
+    return this._componentId;
+  }
+
   get enabled(): boolean {
     return this._enabled;
   }

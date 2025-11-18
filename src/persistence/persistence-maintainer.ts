@@ -21,13 +21,21 @@ export class PersistenceMaintainer extends BaseMaintainer {
   private storage: FileStorageAdapter;
   private lastSnapshotSequence: number = 0;
   private elementOperations: ElementOperation[] = [];
-  
+
+  // FLEX Phase 1: Renamed from 'space' to avoid conflict with Component.space getter
+  private rootSpace: Space;
+  private veilState: VEILStateManager;
+  private config: PersistenceMaintainerConfig;
+
   constructor(
-    private veilState: VEILStateManager,
-    private space: Space,
-    private config: PersistenceMaintainerConfig
+    veilState: VEILStateManager,
+    space: Space,
+    config: PersistenceMaintainerConfig
   ) {
     super();
+    this.veilState = veilState;
+    this.rootSpace = space;
+    this.config = config;
     this.storage = new FileStorageAdapter(config.storagePath);
   }
   
@@ -78,7 +86,7 @@ export class PersistenceMaintainer extends BaseMaintainer {
     const delta: FrameDelta = {
       sequence,
       timestamp: frame.timestamp,
-      lifecycleId: this.space.lifecycleId,  // Tag with current lifecycle
+      lifecycleId: this.rootSpace.lifecycleId,  // Tag with current lifecycle
       frame: minimalFrame,
       elementOperations: [...this.elementOperations]
     };
@@ -97,7 +105,7 @@ export class PersistenceMaintainer extends BaseMaintainer {
     // Element tree is now fully stored in element-tree facets within VEIL
     // No need for separate elementTree serialization
     const elementTree = {
-      id: this.space.id,
+      id: this.rootSpace.id,
       name: 'root',
       type: 'Space',
       active: true,
@@ -111,8 +119,8 @@ export class PersistenceMaintainer extends BaseMaintainer {
       version: 1,
       timestamp: new Date().toISOString(),
       sequence: snapshotSequence,
-      lifecycleId: this.space.lifecycleId,  // Tag with current lifecycle
-      spaceId: this.space.id,                // Stable Space ID
+      lifecycleId: this.rootSpace.lifecycleId,  // Tag with current lifecycle
+      spaceId: this.rootSpace.id,                // Stable Space ID
       veilState: serializeVEILState(state),
       elementTree, // Minimal - only for backward compatibility
       metadata: {
