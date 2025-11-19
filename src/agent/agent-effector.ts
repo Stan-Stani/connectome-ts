@@ -97,6 +97,16 @@ export class AgentEffector extends BaseEffector {
       }
     }
 
+    // FLEX Phase 1: Check direct component registry as last resort
+    if (!this.agent && space && (space as any).getComponentById) {
+      // Try predefined ID from DiscordApp
+      const directComponent = (space as any).getComponentById('discord-agent:AgentComponent');
+      if (directComponent) {
+         console.log(`[AgentEffector.findAgent] Found direct component by ID 'discord-agent:AgentComponent'`);
+         this.agent = (directComponent as any).agent;
+      }
+    }
+
     if (!this.agent) {
       console.log('[AgentEffector.findAgent] FAILED to find agent anywhere');
     }
