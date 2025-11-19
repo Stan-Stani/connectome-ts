@@ -55,21 +55,61 @@ export class ActionEffector extends BaseEffector {
       const elementId = parts[0];
       const action = parts[parts.length - 1];
 
-      // Find the target element
+      // Find the target element or component
       const space = this.element.findSpace();
       if (!space) {
         console.warn(`[ActionEffector] No space found for action routing`);
         continue;
       }
 
-      const targetElement = space.children.find(child => child.id === elementId);
+      let targetElement = space.children.find(child => child.id === elementId);
+      
+      // FLEX Phase 1: If element not found as child, check direct components on Space
+      if (!targetElement) {
+        // Try direct lookup by component ID (if Space supports it)
+        if ((space as any).getComponentById) {
+          // Try exact match (if tool name uses full component ID)
+          let directComponent = (space as any).getComponentById(elementId);
+          
+          // Try prefix match (if tool name uses "elementId" prefix of "elementId:ComponentType")
+          // This supports the pattern where tool is "discord-control.open" but component is "discord-control:DiscordControlPanelComponent"
+          if (!directComponent && (space as any).components) {
+            directComponent = (space as any).components.find((c: any) => 
+              c._componentId && (
+                c._componentId === elementId || 
+                c._componentId.startsWith(`${elementId}:`)
+              )
+            );
+          }
+          
+          if (directComponent) {
+            console.log(`[ActionEffector] Found direct component for '${elementId}': ${directComponent.constructor.name} (${directComponent._componentId})`);
+            
+            // Execute action on component
+            if (directComponent.actions && directComponent.actions.has && directComponent.actions.has(action)) {
+              const handler = directComponent.actions.get(action);
+              console.log(`[ActionEffector] Calling direct component action handler for '${action}'`);
+              try {
+                await handler(parameters);
+                console.log(`[ActionEffector] Successfully executed action via direct component handler`);
+              } catch (error) {
+                console.error(`[ActionEffector] Error executing direct component action:`, error);
+              }
+            } else {
+              console.warn(`[ActionEffector] No handler found for action '${action}' on direct component '${elementId}'`);
+            }
+            continue; // Done with this action
+          }
+        }
+      }
+
       if (!targetElement) {
         console.warn(`[ActionEffector] Target element not found: ${elementId}`);
         continue;
       }
 
       console.log(`[ActionEffector] Found target element: ${targetElement.name} (${targetElement.id})`);
-
+      
       // Try element's own handleAction first (access via type assertion since it's protected)
       const elementWithAction = targetElement as any;
       if (elementWithAction.handleAction) {

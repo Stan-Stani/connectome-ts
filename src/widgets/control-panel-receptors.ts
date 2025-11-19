@@ -31,17 +31,21 @@ export class ControlPanelActionsReceptor extends BaseReceptor {
 
     const deltas: VEILDelta[] = [];
 
+    // Use panelId (e.g. "discord-control") as the tool namespace if available
+    // This ensures friendly tool names like "discord-control.open" instead of "elem_123.open"
+    const targetId = payload.panelId || payload.elementId;
+    
     // Create facets for panel control actions (open/close)
     deltas.push({
       type: 'addFacet',
       facet: {
         id: `action-def-${payload.elementId}-open`,
         type: 'action-definition',
-        displayName: `${payload.elementId}.open`,
+        displayName: `${targetId}.open`,
         attributes: {
-          toolName: `${payload.elementId}.open`,
+          toolName: `${targetId}.open`,
           actionName: 'open',
-          elementId: payload.elementId,
+          elementId: targetId, // Use friendly ID for action routing
           description: `Open the ${payload.displayName} panel to access its tools`,
           parameters: {},
           category: payload.panelId
@@ -55,7 +59,7 @@ export class ControlPanelActionsReceptor extends BaseReceptor {
         id: `tool-instruction-${payload.elementId}-open`,
         type: 'ambient',
         displayName: 'tool-instruction',
-        content: `Open ${payload.displayName} panel: {@${payload.elementId}.open()}`
+        content: `Open ${payload.displayName} panel: {@${targetId}.open()}`
       }
     });
 
@@ -64,11 +68,11 @@ export class ControlPanelActionsReceptor extends BaseReceptor {
       facet: {
         id: `action-def-${payload.elementId}-close`,
         type: 'action-definition',
-        displayName: `${payload.elementId}.close`,
+        displayName: `${targetId}.close`,
         attributes: {
-          toolName: `${payload.elementId}.close`,
+          toolName: `${targetId}.close`,
           actionName: 'close',
-          elementId: payload.elementId,
+          elementId: targetId, // Use friendly ID for action routing
           description: `Close the ${payload.displayName} panel`,
           parameters: {},
           category: payload.panelId,
@@ -83,14 +87,14 @@ export class ControlPanelActionsReceptor extends BaseReceptor {
         id: `tool-instruction-${payload.elementId}-close`,
         type: 'ambient',
         displayName: 'tool-instruction',
-        content: `Close this panel: {@${payload.elementId}.close()}`,
+        content: `Close this panel: {@${targetId}.close()}`,
         scope: [payload.panelScope]  // Only visible when open
       }
     });
 
     // Create facets for each registered tool
     for (const tool of payload.tools) {
-      const toolName = `${payload.elementId}.${tool.name}`;
+      const toolName = `${targetId}.${tool.name}`;
 
       // Action definition facet
       deltas.push({
@@ -102,7 +106,7 @@ export class ControlPanelActionsReceptor extends BaseReceptor {
           attributes: {
             toolName,
             actionName: tool.name,
-            elementId: payload.elementId,
+            elementId: targetId, // Use friendly ID for action routing
             description: tool.description || `Perform ${tool.name} action`,
             parameters: tool.params || {},
             category: tool.category,
@@ -112,13 +116,19 @@ export class ControlPanelActionsReceptor extends BaseReceptor {
       });
 
       // Instruction facet (renderable to agent)
+      // Replace any internal ID references in instructions with friendly ID
+      const instructions = tool.instructions.replace(
+        new RegExp(`{@${payload.elementId}\\.`, 'g'), 
+        `{@${targetId}.`
+      );
+
       deltas.push({
         type: 'addFacet',
         facet: {
           id: `tool-instruction-${payload.elementId}-${tool.name}`,
           type: 'ambient',
           displayName: 'tool-instruction',
-          content: tool.instructions,
+          content: instructions,
           scope: tool.scope  // Panel-scoped
         }
       });

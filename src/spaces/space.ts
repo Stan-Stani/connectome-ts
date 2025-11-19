@@ -285,26 +285,38 @@ export class Space extends Element {
     (this.components as Component[]).push(component);
     this.componentRegistry.set(id, component);
 
-    // Mount to Space (set element reference)
-    (component as any).element = this;
+    // Mount to Space using standard lifecycle (calls onMount)
+    // This ensures onMount() is called and RETM components are auto-registered
+    if (typeof (component as any)._attach === 'function') {
+      // _attach is async but we don't await it here (matches Element.addComponent behavior)
+      (component as any)._attach(this).catch((err: any) => {
+         console.error(`[Space.addComponentDirect] Error attaching component ${id}:`, err);
+      });
+    } else {
+      // Fallback if _attach not available (should not happen for valid Components)
+      console.warn(`[Space.addComponentDirect] Component ${id} does not have _attach method, falling back to manual mounting`);
+      (component as any).element = this;
+      
+      if (typeof component.onMount === 'function') {
+        component.onMount();
+      }
+      
+      // Auto-register MARTEM components manually if _attach didn't do it
+      if (isTransform(component)) {
+        this.addTransform(component);
+      } else if (isModulator(component)) {
+        this.addModulator(component);
+      }
 
-    // Auto-register MARTEM components
-    // IMPORTANT: Check Transform BEFORE Modulator to avoid ambiguity
-    // (both have process(arg) with length 1, but Transform takes state, Modulator takes events)
-    if (isTransform(component)) {
-      this.addTransform(component);
-    } else if (isModulator(component)) {
-      this.addModulator(component);
-    }
-
-    if (isReceptor(component)) {
-      this.addReceptor(component);
-    }
-    if (isEffector(component)) {
-      this.addEffector(component);
-    }
-    if (isMaintainer(component)) {
-      this.addMaintainer(component);
+      if (isReceptor(component)) {
+        this.addReceptor(component);
+      }
+      if (isEffector(component)) {
+        this.addEffector(component);
+      }
+      if (isMaintainer(component)) {
+        this.addMaintainer(component);
+      }
     }
 
     console.log(`[Space.addComponentDirect] Registered ${component.constructor.name} (${id})`);
