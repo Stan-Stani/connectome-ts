@@ -12,8 +12,19 @@ export interface LLMMessage {
       ttl?: number;
     };
     attachments?: Array<{
-      type: 'image' | 'document';
-      data: string; // base64 or URL
+      // Discord attachment format (or similar from other platforms)
+      id?: string;
+      url?: string;
+      proxyUrl?: string;
+      contentType?: string;
+      name?: string;
+      description?: string | null;
+      size?: number;
+      height?: number;
+      width?: number;
+      // Legacy format (for backwards compatibility)
+      type?: 'image' | 'document';
+      data?: string; // base64 or URL
       mimeType?: string;
     }>;
     [key: string]: any;

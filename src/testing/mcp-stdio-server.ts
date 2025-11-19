@@ -151,7 +151,7 @@ rl.on('line', async (line) => {
     switch (method) {
       case 'initialize':
         sendResponse(id, {
-          protocolVersion: '2025-06-18',
+          protocolVersion: '2024-11-05',
           capabilities: {
             tools: {}
           },
