@@ -301,10 +301,10 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     
     // Process deletions first (bottom-up)
     this.processDeletions(events);
-    
-    // Process creations and restorations (top-down)
-    this.processCreations(events, deltas);
-    
+
+    // Process creations and restorations (top-down, now async to support AXON loading)
+    await this.processCreations(events, deltas);
+
     // Process component additions (async to allow AXON loading)
     await this.processComponentAdditions(state, events, deltas);
     
@@ -387,15 +387,15 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     }
   }
   
-  private processCreations(events: SpaceEvent[], deltas: import('../veil/types').VEILDelta[]) {
+  private async processCreations(events: SpaceEvent[], deltas: import('../veil/types').VEILDelta[]) {
     // Get all create operations (both fresh and restored use same code path now)
     const creations = this.pendingOperations.filter(op => op.type === 'create');
-    
+
     // Sort by parent-child relationship
     const sorted = this.sortByHierarchy(creations);
-    
+
     for (const creation of sorted) {
-      this.createElement(creation.facet!, events, deltas);
+      await this.createElementAsync(creation.facet!, events, deltas);
     }
   }
   
@@ -407,7 +407,7 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     }
   }
   
-  private createElement(facet: Facet, events: SpaceEvent[], deltas: import('../veil/types').VEILDelta[]): void {
+  private async createElementAsync(facet: Facet, events: SpaceEvent[], deltas: import('../veil/types').VEILDelta[]): Promise<void> {
     const { parentId, elementType, elementId: requestedElementId, name, components, continuationTag, continuations } = facet.state as any;
 
     // FLEX Phase 1 SHIM: When direct mounting is enabled, intercept element:create
@@ -418,6 +418,13 @@ export class ElementTreeMaintainer extends BaseMaintainer {
       // If components were specified, mount them directly to Space
       if (components && Array.isArray(components)) {
         for (const compDef of components) {
+          // Check if this is an AXON component that needs to be loaded first
+          const axonMetadata = compDef.config?._axonMetadata;
+          if (axonMetadata?.moduleUrl && !ComponentRegistry.has(compDef.type)) {
+            console.log(`[ElementTreeMaintainer] Loading AXON component ${compDef.type} from ${axonMetadata.moduleUrl}`);
+            await this.loadAndRegisterAxonComponent(compDef.type, axonMetadata);
+          }
+
           const component = ComponentRegistry.create(compDef.type);
           if (!component) {
             console.error(`[ElementTreeMaintainer] Failed to create component ${compDef.type} for shimmed element ${name}`);
@@ -427,6 +434,11 @@ export class ElementTreeMaintainer extends BaseMaintainer {
           // Apply config
           if (compDef.config) {
             Object.assign(component, compDef.config);
+
+            // Handle AXON afferents with setConnectionParams
+            if (axonMetadata && 'setConnectionParams' in component && typeof (component as any).setConnectionParams === 'function') {
+              await (component as any).setConnectionParams(compDef.config);
+            }
           }
 
           // Generate stable component ID based on element name and component type
