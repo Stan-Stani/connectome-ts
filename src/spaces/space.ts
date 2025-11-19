@@ -287,16 +287,18 @@ export class Space extends Element {
     this.directComponentRegistry.set(id, component);
 
     // Auto-register MARTEM components
-    if (isModulator(component)) {
-      this.addModulator(component);
-    }
-    if (isReceptor(component)) {
-      (component as any).element = this; // Mount to Space for MARTEM
-      this.addReceptor(component);
-    }
+    // IMPORTANT: Check Transform BEFORE Modulator to avoid ambiguity
+    // (both have process(arg) with length 1, but Transform takes state, Modulator takes events)
     if (isTransform(component)) {
       (component as any).element = this;
       this.addTransform(component);
+    } else if (isModulator(component)) {
+      this.addModulator(component);
+    }
+
+    if (isReceptor(component)) {
+      (component as any).element = this; // Mount to Space for MARTEM
+      this.addReceptor(component);
     }
     if (isEffector(component)) {
       (component as any).element = this;

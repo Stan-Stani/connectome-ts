@@ -410,6 +410,69 @@ export class ElementTreeMaintainer extends BaseMaintainer {
   private createElement(facet: Facet, events: SpaceEvent[], deltas: import('../veil/types').VEILDelta[]): void {
     const { parentId, elementType, elementId: requestedElementId, name, components, continuationTag, continuations } = facet.state as any;
 
+    // FLEX Phase 1 SHIM: When direct mounting is enabled, intercept element:create
+    // and mount components directly to Space instead of creating child elements
+    if (this.useDirectMount) {
+      console.log(`[ElementTreeMaintainer] FLEX Phase 1 SHIM: Converting element:create for '${name}' to direct component mounting`);
+
+      // If components were specified, mount them directly to Space
+      if (components && Array.isArray(components)) {
+        for (const compDef of components) {
+          const component = ComponentRegistry.create(compDef.type);
+          if (!component) {
+            console.error(`[ElementTreeMaintainer] Failed to create component ${compDef.type} for shimmed element ${name}`);
+            continue;
+          }
+
+          // Apply config
+          if (compDef.config) {
+            Object.assign(component, compDef.config);
+          }
+
+          // Generate stable component ID based on element name and component type
+          const componentId = `${requestedElementId}:${compDef.type}`;
+
+          // Mount directly to Space (bypasses tree)
+          (this.rootSpace as any).addComponentDirect(component, componentId);
+
+          console.log(`[ElementTreeMaintainer] ✨ Shimmed component ${compDef.type} mounted directly as ${componentId}`);
+        }
+      }
+
+      // Emit success continuation
+      if (continuationTag || continuations) {
+        events.push({
+          topic: 'veil:operation',
+          source: this.rootSpace.getRef(),
+          timestamp: Date.now(),
+          payload: {
+            operation: {
+              type: 'addFacet',
+              facet: {
+                id: `continuation-complete-${Date.now()}`,
+                type: 'continuation:complete',
+                state: {
+                  continuationTag: continuationTag || `element-create-${requestedElementId}`,
+                  success: true,
+                  result: {
+                    elementId: requestedElementId,
+                    shimmedToDirectMount: true,
+                    componentCount: components?.length || 0
+                  },
+                  continuations: continuations
+                },
+                ephemeral: true
+              }
+            }
+          }
+        });
+      }
+
+      return; // Skip traditional element creation
+    }
+
+    // === LEGACY PATH (when direct mounting disabled) ===
+
     // Find parent
     const parent = this.elementCache.get(parentId || 'root');
             if (!parent) {
@@ -444,12 +507,12 @@ export class ElementTreeMaintainer extends BaseMaintainer {
     // element-tree facet already exists (created by Receptor)
     // Just need to create the actual Element instance to match the facet
     const elementId = requestedElementId;  // Already determined by Receptor
-    
+
     // console.log(`[ElementTreeMaintainer] Creating element ${name} (${elementId})`);
-    
+
     const element = new Element(name, elementId);
     this.elementCache.set(elementId, element);
-    
+
     // Mount element - this will emit element:mount event (queued for next frame)
     parent.addChild(element);
     
@@ -624,9 +687,50 @@ export class ElementTreeMaintainer extends BaseMaintainer {
   
   private async addComponent(facet: Facet, state: ReadonlyVEILState, events: SpaceEvent[], deltas: import('../veil/types').VEILDelta[]): Promise<void> {
     const { elementId, componentType, config, componentClass } = facet.state?.metadata || {};
-    
+
     if (!elementId || !componentType) return;
-    
+
+    // FLEX Phase 1 SHIM: When direct mounting enabled and target is 'root',
+    // mount components directly to Space instead of to root element
+    if (this.useDirectMount && elementId === 'root') {
+      console.log(`[ElementTreeMaintainer] FLEX Phase 1 SHIM: component:add for ${componentType} -> direct mounting to Space`);
+
+      // Check if this is an AXON component that needs to be loaded first
+      const axonMetadata = config?._axonMetadata;
+      if (axonMetadata?.moduleUrl && !ComponentRegistry.has(componentType)) {
+        await this.loadAndRegisterAxonComponent(componentType, axonMetadata);
+      }
+
+      const component = ComponentRegistry.create(componentType);
+      if (!component) {
+        const availableComponents = Array.from((ComponentRegistry as any).registry?.keys() || []).join(', ');
+        console.error(`[ElementTreeMaintainer] Failed to create component ${componentType}. Available: ${availableComponents || '(none)'}`);
+        return;
+      }
+
+      // Apply config
+      if (config) {
+        Object.assign(component, config);
+
+        // Handle AXON afferents with setConnectionParams
+        if (axonMetadata && 'setConnectionParams' in component && typeof (component as any).setConnectionParams === 'function') {
+          await (component as any).setConnectionParams(config);
+        }
+      }
+
+      // Generate stable component ID
+      const componentId = `root:${componentType}`;
+
+      // Mount directly to Space (bypasses tree)
+      (this.rootSpace as any).addComponentDirect(component, componentId);
+
+      console.log(`[ElementTreeMaintainer] ✨ Shimmed component ${componentType} mounted directly as ${componentId}`);
+
+      return; // Skip traditional element-based mounting
+    }
+
+    // === LEGACY PATH (when direct mounting disabled or non-root elements) ===
+
     const element = this.elementCache.get(elementId);
     if (!element) {
       console.warn(`[ElementTreeMaintainer] Element ${elementId} not found for component ${componentType}`);

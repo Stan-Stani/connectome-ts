@@ -43,6 +43,11 @@ export function isModulator(component: any): component is Modulator {
     return true;
   }
 
+  // If explicitly marked as something else, not a modulator
+  if (component?.[RETM_TYPE] && component[RETM_TYPE] !== RETM_TYPES.MODULATOR) {
+    return false;
+  }
+
   // Fallback to duck typing for backwards compatibility
   return component &&
     typeof component.process === 'function' &&

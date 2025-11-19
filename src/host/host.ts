@@ -172,8 +172,9 @@ export class ConnectomeHost {
         storagePath: this.config.persistence.storageDir || './connectome-state',
         snapshotInterval: this.config.persistence.snapshotInterval || 100
       });
-      // Just mount - auto-registration happens automatically
-      await space.addComponentAsync(persistenceMaintainer);
+
+      // FLEX Phase 1: Mount directly (bypass tree)
+      (space as any).addComponentDirect(persistenceMaintainer, 'infrastructure:PersistenceMaintainer');
 
       // Store reference for debug server frame deletion
       (space as any).persistence = persistenceMaintainer;
@@ -413,20 +414,27 @@ export class ConnectomeHost {
    * Handles declarative element and component creation via events
    */
   private async initializeElementTreeInfrastructure(space: Space): Promise<void> {
-    const { ElementRequestReceptor, ElementTreeTransform, ElementTreeMaintainer } = 
+    const { ElementRequestReceptor, ElementTreeTransform, ElementTreeMaintainer } =
       await import('../spaces/element-tree-receptors');
-    
+
+    // FLEX Phase 1: Enable direct mounting mode
+    space.enableDirectMounting();
+    console.log('✨ FLEX Phase 1: Direct mounting enabled');
+
     // Mount infrastructure components
     const receptor = new ElementRequestReceptor();
     const transform = new ElementTreeTransform();
     const maintainer = new ElementTreeMaintainer(space);
-    
-    // Mount them to Space
-    await space.addComponentAsync(receptor);
-    await space.addComponentAsync(transform);
-    await space.addComponentAsync(maintainer);
-    
-    console.log('🔧 Element Tree infrastructure initialized');
+
+    // FLEX Phase 1: Enable direct mounting in the maintainer (for shimming element:create)
+    maintainer.enableDirectMount();
+
+    // FLEX Phase 1: Mount infrastructure components directly (bypass tree)
+    (space as any).addComponentDirect(receptor, 'infrastructure:ElementRequestReceptor');
+    (space as any).addComponentDirect(transform, 'infrastructure:ElementTreeTransform');
+    (space as any).addComponentDirect(maintainer, 'infrastructure:ElementTreeMaintainer');
+
+    console.log('🔧 Element Tree infrastructure initialized with FLEX Phase 1 shimming');
   }
 
   /**
@@ -609,35 +617,27 @@ export class ConnectomeHost {
    * Set up handler for dynamically loaded components
    */
   private setupDynamicComponentHandler(space: Space): void {
-    // Check if a host handler already exists (from persistence)
-    let hostElement = space.children.find(child => child.name === '_host_handler');
-    
-    if (hostElement) {
+    // FLEX Phase 1: Use direct component mounting instead of creating child element
+    const componentId = '_host_handler:HostHandlerComponent';
+    const existingHandler = (space as any).getDirectComponent?.(componentId);
+
+    if (existingHandler) {
       console.log('[Host] Found existing host handler from persistence');
-      console.log(`[Host] Host handler has ${hostElement.components.length} components`);
-      // Ensure it's subscribed to the right events
+      // Ensure space is subscribed to the right events
       space.subscribe('axon:component-loaded');
-      hostElement.subscribe('axon:component-loaded');
-      
-      // Re-add the handler component if it's missing
-      if (hostElement.components.length === 0) {
-        console.log('[Host] Host handler has no components, adding handler component');
-        hostElement.addComponent(new HostHandlerComponent(this));
-      }
-      
       return;
     }
-    
-    // Create new host handler
+
+    // Create new host handler component (no element wrapper needed)
     console.log('[Host] Creating new host handler');
-    hostElement = new Element('_host_handler');
-    hostElement.addComponent(new HostHandlerComponent(this));
-    space.addChild(hostElement);
-    
-    // Subscribe to axon component loaded events at both space and element level
+    const handler = new HostHandlerComponent(this);
+
+    // Mount directly to Space (FLEX Phase 1)
+    (space as any).addComponentDirect(handler, componentId);
+
+    // Subscribe to axon component loaded events at space level
     space.subscribe('axon:component-loaded');
-    hostElement.subscribe('axon:component-loaded');
-    
+
     console.log('[Host] Dynamic component handler setup complete');
   }
   
