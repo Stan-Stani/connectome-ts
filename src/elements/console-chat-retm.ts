@@ -99,7 +99,7 @@ export class ConsoleAfferent extends BaseAfferent<ConsoleConfig, ConsoleCommand>
         // Emit sleep command event
         this.emit({
           topic: 'agent:command',
-          source: { elementId: this.element?.id || 'console', elementPath: [] },
+          source: this.getRef(),
           timestamp: Date.now(),
           payload: { type: 'sleep', duration: command.duration }
         });
@@ -117,7 +117,7 @@ export class ConsoleAfferent extends BaseAfferent<ConsoleConfig, ConsoleCommand>
       case 'wake':
         this.emit({
           topic: 'agent:command',
-          source: { elementId: this.element?.id || 'console', elementPath: [] },
+          source: this.getRef(),
           timestamp: Date.now(),
           payload: { type: 'wake' }
         });
@@ -205,7 +205,7 @@ export class ConsoleAfferent extends BaseAfferent<ConsoleConfig, ConsoleCommand>
     // Emit console message event
     this.emit({
       topic: 'console:message',
-      source: { elementId: this.element?.id || 'console', elementPath: [] },
+      source: this.getRef(),
       timestamp: Date.now(),
       payload: {
         messageId,

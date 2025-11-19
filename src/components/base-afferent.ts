@@ -87,17 +87,13 @@ export abstract class BaseAfferent<TConfig = any, TCommand = any>
   
   // Removed mount(element) as Component handles attachment via _attach and onMount
   
-  async unmount(): Promise<void> {
-    await this.stop(true);
-  }
-  
   // Override Component lifecycle methods
   
   // onMount is no longer a no-op - we can use it for initialization if needed
   // But strictly, Afferents initialize via initialize() called by the host/environment
   
   async onUnmount(): Promise<void> {
-    await this.unmount();
+    await this.stop(true);
   }
   
   async onDestroy(): Promise<void> {

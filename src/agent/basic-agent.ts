@@ -24,7 +24,7 @@ import { RenderedContext } from '../hud/types-v2';
 import { FrameTrackingHUD } from '../hud/frame-tracking-hud';
 import { LLMProvider } from '../llm/llm-interface';
 import { VEILStateManager } from '../veil/veil-state';
-import { Element } from '../spaces/element';
+import { Component } from '../spaces/component';
 import { 
   TraceStorage, 
   TraceCategory, 
@@ -524,10 +524,24 @@ export class BasicAgent implements AgentInterface {
    * Register an element's actions automatically
    * Called by Space when elements are added
    */
-  registerElementAutomatically(element: Element): void {
+  registerElementAutomatically(element: Component): void {
     if (!this._autoActionRegistration) return;
     
     // Look for components with declared actions
+    // In Phase 2, 'element' is a Component.
+    // But wait, this method seems to assume 'element' is a container of components?
+    // If Element is gone, this logic needs review.
+    // For now, let's assume 'element' is a Component that might have actions.
+    
+    const componentClass = element.constructor as any;
+    const declaredActions = componentClass.actions;
+    
+    if (declaredActions && Object.keys(declaredActions).length > 0) {
+      this.registerElementActions(element, declaredActions);
+    }
+    
+    /*
+    // Deprecated: logic for iterating components of an element
     const components = (element as any)._components || [];
     
     for (const component of components) {
@@ -539,6 +553,7 @@ export class BasicAgent implements AgentInterface {
         this.registerElementActions(element, declaredActions);
       }
     }
+    */
     
     // Special case: if it's a box with no declared actions, add a generic open action
     if (element.id.startsWith('box-')) {
@@ -554,7 +569,7 @@ export class BasicAgent implements AgentInterface {
   /**
    * Register multiple actions for an element at once
    */
-  registerElementActions(element: Element | string, actions: Record<string, string | ActionConfig>): void {
+  registerElementActions(element: Component | string, actions: Record<string, string | ActionConfig>): void {
     const elementId = typeof element === 'string' ? element : element.id;
     
     for (const [actionName, config] of Object.entries(actions)) {

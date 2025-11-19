@@ -6,11 +6,12 @@ import {
   StreamRef,
   AgentInfo,
   hasEphemeralAspect,
-  VEILDelta
+  VEILDelta,
+  ReadonlyVEILState
 } from '../veil/types';
 import { createEventFacet } from '../helpers/factories';
 import { SpaceEvent } from './types';
-import { Component } from '../types/component';
+import { Component } from './component';
 
 /**
  * Modulator: Phase 0 - Preprocesses events before they reach receptors
@@ -221,26 +222,6 @@ export interface FacetDelta {
   oldFacet?: Facet; // For 'changed' type
 }
 
-/**
- * Read-only view of VEIL state
- */
-export interface ReadonlyVEILState {
-  facets: ReadonlyMap<string, Facet>;
-  scopes: ReadonlySet<string>;
-  streams: ReadonlyMap<string, any>;
-  agents: ReadonlyMap<string, AgentInfo>;
-  currentStream?: StreamRef;
-  currentAgent?: string;
-  frameHistory: ReadonlyArray<Frame>;
-  currentSequence: number;
-  removals: ReadonlyMap<string, 'hide' | 'delete'>;
-  
-  // Helper methods
-  getFacetsByType(type: string): Facet[];
-  getFacetsByAspect(aspect: keyof Facet, value: any): Facet[];
-  hasFacet(id: string): boolean;
-}
-
 // Ephemeral facets are not actively cleaned up - they naturally fade away
 // by not being persisted and being ignored by systems that don't need them
 
@@ -279,4 +260,4 @@ export interface Maintainer extends Component {
 }
 
 // Re-export common types for convenience
-export { SpaceEvent, Facet, Frame, VEILDelta };
+export { SpaceEvent, Facet, Frame, VEILDelta, ReadonlyVEILState };

@@ -266,7 +266,7 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
   /**
    * Get a reference to this component (shimmed as ElementRef)
    */
-  protected getRef(): ElementRef {
+  public getRef(): ElementRef {
     return {
       elementId: this.id,
       elementPath: ['root', this.id],
@@ -562,10 +562,7 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
       throw new Error(`[${this.constructor.name}] Cannot defer operation - no space found`);
     }
     
-    this.space.once('frame:start', () => {
-      operation();
-    });
-    (this.space as any).requestFrame();
+    this.space.runNextFrame(operation);
   }
 
   // ============================================
@@ -682,22 +679,12 @@ export abstract class VEILComponent extends Component {
     }
   }
   
-  // Add a facet to the current frame (inherited implementation logic)
-  // ... (keeping the rest of addFacet similar to before but using this.id instead of element.id)
-  protected addFacet(facetDef: any): void {
-      // ... implementation details ...
-      // Using logic from previous addFacet but replacing element.id with this.id
-      const agentId = facetDef.agentId ?? (facetDef.attributes?.agentId as string) ?? this.id ?? 'unknown-agent';
-      const entityId = (facetDef.attributes?.entityId as string) ?? facetDef.entityId ?? this.id ?? 'unknown-entity';
-      
-      // ... (simplified implementation since I'm rewriting)
-      super.addFacet(facetDef); // Actually Component doesn't have addFacet exposed publicly, but it calls addOperation
+  // Add a facet to the current frame
+  protected addFacet(facet: any): void {
+      this.addOperation({
+        type: 'addFacet',
+        facet
+      });
   }
 }
-
-// Re-implement VEILComponent properly (I truncated it above, need to be careful)
-// Actually, Component has addOperation now. VEILComponent extends Component and overrides addOperation to support deferral.
-
-// Let's rewrite the file with FULL content to be safe.
-// I need to verify if InteractiveComponent and StateComponent are also in this file. Yes they are.
 

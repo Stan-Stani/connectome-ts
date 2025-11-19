@@ -127,6 +127,9 @@ export class Space {
   // Topic subscriptions for the Space itself
   private _subscriptions: string[] = [];
 
+  // Callbacks to run on next frame
+  private nextFrameCallbacks: (() => void)[] = [];
+
   constructor(veilState: VEILStateManager, hostRegistry?: Map<string, any>, lifecycleId?: string, spaceId?: string) {
     this.id = spaceId || 'root';
     this.veilState = veilState;
@@ -185,6 +188,18 @@ export class Space {
     return component;
   }
 
+  /**
+   * Complete mounting after restoration when external services are ready
+   */
+  async completeMountForRestoration(): Promise<void> {
+    // For flat components list
+    for (const component of this.components) {
+       if ('_completeMount' in component) {
+         await (component as any)._completeMount();
+       }
+    }
+  }
+  
   /**
    * Remove a component from the Space
    */
@@ -368,10 +383,29 @@ export class Space {
   }
   
   /**
+   * Schedule a callback to run at the start of the next frame
+   */
+  runNextFrame(callback: () => void): void {
+    this.nextFrameCallbacks.push(callback);
+    this.requestFrame();
+  }
+
+  /**
    * Process one frame
    */
   private async processFrame(): Promise<void> {
     if (this.processingFrame) return;
+    
+    // Run next frame callbacks first
+    const callbacks = [...this.nextFrameCallbacks];
+    this.nextFrameCallbacks = [];
+    for (const callback of callbacks) {
+      try {
+        callback();
+      } catch (err) {
+        console.error('[Space] Error in next frame callback:', err);
+      }
+    }
     
     // Skip frame processing during restoration
     if (this.isRestoring) {

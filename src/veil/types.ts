@@ -160,3 +160,23 @@ export interface VEILState {
   // Maps state facet ID → current computed state after applying all state-changes
   currentStateCache: Map<string, any>;
 }
+
+/**
+ * Read-only view of VEIL state
+ */
+export interface ReadonlyVEILState {
+  facets: ReadonlyMap<string, Facet>;
+  scopes: ReadonlySet<string>;
+  streams: ReadonlyMap<string, any>;
+  agents: ReadonlyMap<string, AgentInfo>;
+  currentStream?: StreamRef;
+  currentAgent?: string;
+  frameHistory: ReadonlyArray<Frame>;
+  currentSequence: number;
+  removals: ReadonlyMap<string, 'hide' | 'delete'>;
+  
+  // Helper methods
+  getFacetsByType(type: string): Facet[];
+  getFacetsByAspect(aspect: keyof Facet, value: any): Facet[];
+  hasFacet(id: string): boolean;
+}

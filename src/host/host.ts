@@ -29,7 +29,6 @@ export interface HostConfig {
   };
   providers?: {
     [key: string]: LLMProvider;
-    33?: LLMProvider;
   };
   secrets?: {
     [key: string]: string;

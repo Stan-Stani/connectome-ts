@@ -66,7 +66,7 @@ export class SpaceNotesComponent extends InteractiveComponent {
     // Emit event for other agents
     this.emit({
       topic: 'notes:added',
-      source: this.getRef(),
+      // source: this.getRef(), // Auto-filled
       payload: { noteId, preview: params.content.substring(0, 50) },
       timestamp: Date.now()
     });

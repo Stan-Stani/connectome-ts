@@ -2,8 +2,8 @@ import { ReadonlyVEILState, SpaceEvent, FacetDelta } from '../spaces/receptor-ef
 import { BaseMaintainer } from '../components/base-martem';
 import { VEILStateManager } from '../veil/veil-state';
 import { FileStorageAdapter } from './file-storage';
-import { FrameDelta, PersistenceSnapshot, ElementOperation } from './types';
-import { serializeVEILState, serializeElement } from './serialization';
+import { FrameDelta, PersistenceSnapshot } from './types';
+import { serializeVEILState, serializeSpace } from './serialization';
 import { Frame } from '../veil/types';
 import { Space } from '../spaces/space';
 
@@ -20,7 +20,6 @@ export interface PersistenceMaintainerConfig {
 export class PersistenceMaintainer extends BaseMaintainer {
   private storage: FileStorageAdapter;
   private lastSnapshotSequence: number = 0;
-  private elementOperations: ElementOperation[] = [];
 
   // FLEX Phase 1: Renamed from 'space' to avoid conflict with Component.space getter
   private rootSpace: Space;
@@ -57,8 +56,8 @@ export class PersistenceMaintainer extends BaseMaintainer {
     }
     
     // Clear element operations after snapshot
-    if (this.elementOperations.length > 0 && frame.sequence % snapshotInterval === 0) {
-      this.elementOperations = [];
+    if (frame.sequence % snapshotInterval === 0) {
+      // Cleanup if needed
     }
     
     return { events: [] }; // No events to emit
@@ -87,8 +86,7 @@ export class PersistenceMaintainer extends BaseMaintainer {
       sequence,
       timestamp: frame.timestamp,
       lifecycleId: this.rootSpace.lifecycleId,  // Tag with current lifecycle
-      frame: minimalFrame,
-      elementOperations: [...this.elementOperations]
+      frame: minimalFrame
     };
     
     // Save using the storage adapter
@@ -102,17 +100,8 @@ export class PersistenceMaintainer extends BaseMaintainer {
     // Use provided sequence or current sequence
     const snapshotSequence = sequence !== undefined ? sequence : state.currentSequence;
     
-    // Element tree is now fully stored in element-tree facets within VEIL
-    // No need for separate elementTree serialization
-    const elementTree = {
-      id: this.rootSpace.id,
-      name: 'root',
-      type: 'Space',
-      active: true,
-      subscriptions: [],
-      components: [],
-      children: []
-    };
+    // Serialize Space (replaces element tree)
+    const serializedSpace = serializeSpace(this.rootSpace);
     
     // Create snapshot
     const snapshot: PersistenceSnapshot = {
@@ -122,7 +111,7 @@ export class PersistenceMaintainer extends BaseMaintainer {
       lifecycleId: this.rootSpace.lifecycleId,  // Tag with current lifecycle
       spaceId: this.rootSpace.id,                // Stable Space ID
       veilState: serializeVEILState(state),
-      elementTree, // Minimal - only for backward compatibility
+      space: serializedSpace,
       metadata: {
         facetCount: state.facets.size,
         streamCount: state.streams.size,

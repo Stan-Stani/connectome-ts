@@ -35,19 +35,20 @@ export class ComponentToReceptorAdapter extends BaseReceptor {
     // Capture operations by creating a fake frame
     const capturedOps: any[] = [];
     
-    // Temporarily mock the component's element methods
-    const originalElement = this.component.element;
-    const mockElement = {
-      ...originalElement,
-      findSpace: () => ({
-        getCurrentFrame: () => ({ deltas: capturedOps }),
-        isProcessingFrame: true,
-        addOperation: (op: any) => capturedOps.push(op)
-      })
+    // Temporarily mock the component's space methods
+    const originalSpace = this.component.space;
+    const mockSpace = {
+      ...originalSpace,
+      getCurrentFrame: () => ({ deltas: capturedOps }),
+      isProcessingFrame: true,
+      addOperation: (op: any) => capturedOps.push(op),
+      // Add any other necessary space methods here
+      getRef: () => ({ elementId: 'mock', elementPath: [] }),
+      emit: (evt: any) => {} // Mock emit to do nothing or capture
     };
     
-    // Replace element temporarily
-    (this.component as any).element = mockElement;
+    // Replace space temporarily
+    (this.component as any).space = mockSpace;
     
     try {
       // Let component handle the event
@@ -57,8 +58,8 @@ export class ComponentToReceptorAdapter extends BaseReceptor {
       return capturedOps;
         
     } finally {
-      // Restore original element
-      (this.component as any).element = originalElement;
+      // Restore original space
+      (this.component as any).space = originalSpace;
     }
   }
 }
@@ -96,8 +97,8 @@ export class ComponentToEffectorAdapter extends BaseEffector {
       };
       
       // Capture any events the component might emit
-      const originalEmit = this.component.element.emit;
-      (this.component.element as any).emit = (event: SpaceEvent) => {
+      const originalEmit = this.component.space.emit;
+      (this.component.space as any).emit = (event: SpaceEvent) => {
         events.push(event);
       };
       
@@ -106,7 +107,7 @@ export class ComponentToEffectorAdapter extends BaseEffector {
         this.component.handleEvent(syntheticEvent);
       } finally {
         // Restore original emit
-        (this.component.element as any).emit = originalEmit;
+        (this.component.space as any).emit = originalEmit;
       }
     }
     

@@ -18,6 +18,8 @@ import { VEILDelta } from '../veil/types';
 export class ContinuationTransform extends BaseTransform implements Transform {
   
   facetFilters = undefined;  // Process all facets
+
+  // mount/unmount implementation is handled by BaseTransform -> Component class
   
   process(state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];

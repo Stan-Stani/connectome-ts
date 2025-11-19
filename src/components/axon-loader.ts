@@ -304,8 +304,8 @@ export class AxonLoaderComponent extends Component {
     if (this.loadedComponent) {
       console.log(`[AxonLoader] Unmounting previous component`);
       try {
-        // Remove the component from the element
-        this.element.removeComponent(this.loadedComponent);
+        // Remove the component from the space
+        this.space.removeComponent(this.loadedComponent);
       } catch (error) {
         console.error(`[AxonLoader] Error unmounting component:`, error);
       }
@@ -571,9 +571,9 @@ export class AxonLoaderComponent extends Component {
             // Emit component:add - Maintainer will instantiate and call setConnectionParams
             space.emit({
               topic: 'component:add',
-              source: this.element.getRef(),
+              source: this.getRef(),
               payload: {
-                elementId: this.element.id,
+                elementId: this.id,
                 componentType: afferentClassName,
                 componentClass: 'component',
                 config
@@ -613,9 +613,9 @@ export class AxonLoaderComponent extends Component {
           // Emit component:add - let Maintainer handle instantiation
           space.emit({
             topic: 'component:add',
-            source: this.element.getRef(),
+            source: this.getRef(),
             payload: {
-              elementId: this.element.id,
+              elementId: this.id,
               componentType: componentClassName,
               componentClass: 'component',
               config
@@ -637,7 +637,7 @@ export class AxonLoaderComponent extends Component {
     console.log(`[AxonLoader] Emitting axon:module-loaded event for application initialization`);
     await space.emit({
       topic: 'axon:module-loaded',
-      source: this.element.getRef(),
+      source: this.getRef(),
       payload: {
         module: this.manifest?.name || 'unknown',
         exports: this.loadedExports
@@ -656,7 +656,7 @@ export class AxonLoaderComponent extends Component {
     // Clean up loaded component
     if (this.loadedComponent) {
       try {
-        this.element.removeComponent(this.loadedComponent);
+        this.space.removeComponent(this.loadedComponent);
       } catch (error) {
         console.error('[AxonLoader] Error cleaning up component:', error);
       }

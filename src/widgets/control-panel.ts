@@ -76,7 +76,7 @@ export abstract class ControlPanelComponent extends InteractiveComponent {
     // ControlPanelActionsReceptor will create facets declaratively
     console.log(`[ControlPanel:${this.getPanelId()}] Emitting tools-registered event with ${this.toolsMetadata.length} tools`);
 
-    this.element.emit({
+    this.emit({
       topic: 'panel:tools-registered',
       timestamp: Date.now(),
       payload: {
@@ -92,7 +92,7 @@ export abstract class ControlPanelComponent extends InteractiveComponent {
     // Initialize scope state based on current isOpen state
     // This ensures tools are hidden if panel starts closed
     console.log(`[ControlPanel:${this.getPanelId()}] Initializing scope state: ${this.isOpen ? 'active' : 'inactive'}`);
-    this.element.emit({
+    this.emit({
       topic: 'panel:scope-change',
       timestamp: Date.now(),
       payload: {
@@ -124,7 +124,7 @@ export abstract class ControlPanelComponent extends InteractiveComponent {
     this.isOpen = true;
 
     // Emit scope activation event (declarative!)
-    this.element.emit({
+    this.emit({
       topic: 'panel:scope-change',
       timestamp: Date.now(),
       payload: {
@@ -165,7 +165,7 @@ export abstract class ControlPanelComponent extends InteractiveComponent {
     this.isOpen = false;
 
     // Emit scope deactivation event (declarative!)
-    this.element.emit({
+    this.emit({
       topic: 'panel:scope-change',
       timestamp: Date.now(),
       payload: {
@@ -198,7 +198,7 @@ export abstract class ControlPanelComponent extends InteractiveComponent {
     // This is the declarative way - event will be processed by VEILOperationReceptor
     console.log(`[ControlPanel:${this.getPanelId()}] Emitting agent-activation facet: ${reason}`);
 
-    this.element.emit({
+    this.emit({
       topic: 'veil:operation',
       timestamp: Date.now(),
       payload: {
