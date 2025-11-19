@@ -619,7 +619,7 @@ export class ConnectomeHost {
   private setupDynamicComponentHandler(space: Space): void {
     // FLEX Phase 1: Use direct component mounting instead of creating child element
     const componentId = '_host_handler:HostHandlerComponent';
-    const existingHandler = (space as any).getDirectComponent?.(componentId);
+    const existingHandler = (space as any).getComponentById?.(componentId);
 
     if (existingHandler) {
       console.log('[Host] Found existing host handler from persistence');

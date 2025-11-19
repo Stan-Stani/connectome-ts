@@ -106,10 +106,9 @@ export class Space extends Element {
   private effectors: Effector[] = [];
   private maintainers: Maintainer[] = [];
 
-  // FLEX Phase 1: Flat component list (NEW)
-  // Components registered directly with Space, bypassing tree hierarchy
-  private directComponents: Component[] = [];
-  private directComponentRegistry: Map<string, Component> = new Map();
+  // FLEX Phase 1: Component ID registry for direct lookup
+  // Now that all components use the flat `components` array, we just need a lookup map
+  private componentRegistry: Map<string, Component> = new Map();
 
   // FLEX Phase 1: Direct mounting flag (enables flat list behavior)
   private useDirectMounting: boolean = false;
@@ -273,39 +272,38 @@ export class Space extends Element {
     const id = componentId || `component-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
     // Check for duplicate
-    if (this.directComponentRegistry.has(id)) {
+    if (this.componentRegistry.has(id)) {
       console.warn(`[Space.addComponentDirect] Component ${id} already registered, skipping`);
-      return this.directComponentRegistry.get(id) as T;
+      return this.componentRegistry.get(id) as T;
     }
 
     // Add component's space reference (NEW: direct access)
     (component as any)._space = this;
     (component as any)._componentId = id;
 
-    // Register component
-    this.directComponents.push(component);
-    this.directComponentRegistry.set(id, component);
+    // Register component in the flat components array (reusing Element's field)
+    (this.components as Component[]).push(component);
+    this.componentRegistry.set(id, component);
+
+    // Mount to Space (set element reference)
+    (component as any).element = this;
 
     // Auto-register MARTEM components
     // IMPORTANT: Check Transform BEFORE Modulator to avoid ambiguity
     // (both have process(arg) with length 1, but Transform takes state, Modulator takes events)
     if (isTransform(component)) {
-      (component as any).element = this;
       this.addTransform(component);
     } else if (isModulator(component)) {
       this.addModulator(component);
     }
 
     if (isReceptor(component)) {
-      (component as any).element = this; // Mount to Space for MARTEM
       this.addReceptor(component);
     }
     if (isEffector(component)) {
-      (component as any).element = this;
       this.addEffector(component);
     }
     if (isMaintainer(component)) {
-      (component as any).element = this;
       this.addMaintainer(component);
     }
 
@@ -315,17 +313,10 @@ export class Space extends Element {
   }
 
   /**
-   * Get all directly mounted components
+   * Get a component by its unique ID
    */
-  getDirectComponents(): ReadonlyArray<Component> {
-    return this.directComponents;
-  }
-
-  /**
-   * Get a directly mounted component by ID
-   */
-  getDirectComponent(id: string): Component | undefined {
-    return this.directComponentRegistry.get(id);
+  getComponentById(id: string): Component | undefined {
+    return this.componentRegistry.get(id);
   }
 
   /**
@@ -593,9 +584,9 @@ export class Space extends Element {
    * This ensures compatibility during the tree collapse migration
    */
   private async deliverEventToChildren(event: SpaceEvent): Promise<void> {
-    // FLEX Phase 1: Deliver to directly mounted components FIRST
-    if (this.useDirectMounting && this.directComponents.length > 0) {
-      for (const component of this.directComponents) {
+    // FLEX Phase 1: Deliver to all components in the flat list
+    if (this.useDirectMounting && this.components.length > 0) {
+      for (const component of this.components) {
         if (component.enabled) {
           try {
             await component.handleEvent(event);

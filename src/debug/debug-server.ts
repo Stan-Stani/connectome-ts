@@ -849,8 +849,8 @@ export class DebugServer {
 
     this.app.get('/api/state', (_req, res) => {
       try {
-        // FLEX Phase 1: Include directly mounted components
-        const directComponents = (this.space as any).getDirectComponents?.() || [];
+        // FLEX Phase 1: All components now in flat list
+        const components = this.space.components || [];
         const useDirectMounting = (this.space as any).isDirectMountingEnabled?.() || false;
 
         // Serialize space structure without circular references
@@ -862,8 +862,8 @@ export class DebugServer {
             id: c.element?.id || 'unknown',
             ...getMartemMetadata(c, this.space)
           })),
-          // FLEX Phase 1: Add directly mounted components
-          directComponents: directComponents.map((c: any) => ({
+          // FLEX Phase 1: All components in flat list
+          directComponents: components.map((c: any) => ({
             type: c.constructor.name,
             id: c.componentId || 'unknown',
             ...getMartemMetadata(c, this.space)
@@ -878,8 +878,8 @@ export class DebugServer {
               ...getMartemMetadata(c, this.space)
             }))
           })),
-          componentCount: this.space.components.length,
-          directComponentCount: directComponents.length, // FLEX Phase 1
+          componentCount: components.length,
+          directComponentCount: components.length, // FLEX Phase 1
           receptorCount: (this.space as any).receptors?.size || 0,
           effectorCount: (this.space as any).effectors?.length || 0,
           transformCount: (this.space as any).transforms?.length || 0,
