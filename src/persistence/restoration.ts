@@ -5,13 +5,12 @@
 import { VEILStateManager } from '../veil/veil-state';
 import { VEILState, Facet, StreamInfo } from '../veil/types';
 import { Space } from '../spaces/space';
-import { Element } from '../spaces/element';
 import { Component } from '../spaces/component';
 import {
   SerializedVEILState,
-  SerializedElement,
   SerializedComponent,
-  PersistenceSnapshot
+  PersistenceSnapshot,
+  SerializedSpace
 } from './types';
 import { deserializeValue } from './serialization';
 import { ComponentRegistry } from './component-registry';
@@ -148,78 +147,9 @@ function deserializeFacet(data: any): Facet | null {
 }
 
 /**
- * Restore element tree from serialized format
- */
-export async function restoreElementTree(
-  space: Space,
-  serialized: SerializedElement
-): Promise<void> {
-  // Clear existing children (but not the space itself)
-  const existingChildren = [...space.children];
-  for (const child of existingChildren) {
-    space.removeChild(child);
-  }
-  
-  // Restore children recursively
-  for (const childData of serialized.children) {
-    const child = await restoreElement(childData);
-    if (child) {
-      space.addChild(child);
-    }
-  }
-}
-
-/**
- * Restore a single element and its subtree
- */
-async function restoreElement(data: SerializedElement): Promise<Element | null> {
-  try {
-    // Create element - for now only basic Element type is supported
-    // Custom element types would need to be refactored as Components
-    const element = new Element(data.name, data.id);
-    
-    // Restore active state
-    if (!data.active) {
-      element.active = false;
-    }
-    
-    // Restore subscriptions
-    for (const topic of data.subscriptions) {
-      element.subscribe(topic);
-    }
-    
-    // Restore components and wait for them to fully initialize
-    const componentPromises: Promise<any>[] = [];
-    for (const componentData of data.components) {
-      const component = await restoreComponent(componentData);
-      if (component) {
-        // Use addComponentAsync to properly mount and wait for initialization
-        componentPromises.push(element.addComponentAsync(component, true)); // isRestoring=true
-      }
-    }
-    
-    // Wait for all components to finish mounting
-    await Promise.all(componentPromises);
-    
-    // Restore children recursively
-    for (const childData of data.children) {
-      const child = await restoreElement(childData);
-      if (child) {
-        element.addChild(child);
-      }
-    }
-    
-    return element;
-  } catch (error) {
-    console.error('Failed to restore element:', data.name, error);
-    return null;
-  }
-}
-
-/**
  * Restore a component from serialized data
  */
-async function restoreComponent(data: SerializedComponent): Promise<Component | null> {
+export async function restoreComponent(data: SerializedComponent): Promise<Component | null> {
   // Create component instance
   const component = ComponentRegistry.create(data.className);
   if (!component) {
@@ -255,6 +185,30 @@ async function restoreComponent(data: SerializedComponent): Promise<Component | 
 }
 
 /**
+ * Restore Space and its components
+ */
+export async function restoreSpace(space: Space, serialized: SerializedSpace): Promise<void> {
+  console.log(`[Restoration] Restoring space ${serialized.id}`);
+  
+  // Restore components
+  for (const componentData of serialized.components) {
+    try {
+      const component = await restoreComponent(componentData);
+      if (component) {
+        // Use component ID from serialization if available
+        const componentId = componentData.id || `restored-component-${Date.now()}`;
+        
+        // Add to space (this will trigger mount/restore)
+        space.addComponent(component, componentId, true);
+        console.log(`[Restoration] Restored component: ${component.constructor.name} (${componentId})`);
+      }
+    } catch (error) {
+      console.error(`[Restoration] Failed to restore component:`, error);
+    }
+  }
+}
+
+/**
  * Full restoration from a persistence snapshot
  */
 export async function restoreFromSnapshot(
@@ -267,8 +221,10 @@ export async function restoreFromSnapshot(
   // Step 1: Restore VEIL state
   await restoreVEILState(veilManager, snapshot.veilState);
   
-  // Step 2: Restore element tree
-  await restoreElementTree(space, snapshot.elementTree);
+  // Step 2: Restore Space (replaces element tree restoration)
+  if (snapshot.space) {
+    await restoreSpace(space, snapshot.space);
+  }
   
   // Step 3: TODO - Restore compressed frame batches if present
   if (snapshot.compressedFrames) {

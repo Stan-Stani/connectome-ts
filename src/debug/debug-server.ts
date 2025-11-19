@@ -4,7 +4,6 @@ import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import fs from 'fs';
 import { EventEmitter } from 'events';
-import { performance } from 'perf_hooks';
 import { debugLLMBridge, DebugLLMRequest } from '../llm/debug-llm-bridge';
 
 import type { Space } from '../spaces/space';
@@ -14,7 +13,6 @@ import { hasContentAspect } from '../veil/types';
 import type { SpaceEvent, ElementRef } from '../spaces/types';
 import type { DebugObserver, DebugFrameStartContext, DebugFrameCompleteContext, DebugEventContext, DebugAgentFrameContext } from './types';
 import { deterministicUUID } from '../utils/uuid';
-import { Element } from '../spaces/element';
 import type { Component } from '../spaces/component';
 import type { RenderedContext } from '../hud/types-v2';
 import { serializeVEILState } from '../persistence/serialization';
@@ -269,10 +267,7 @@ class DebugStateTracker extends EventEmitter implements DebugObserver {
     
     const result = sortedFrames.slice(start, end);
     
-    console.log(`[DebugTracker] getFrames: total=${this.frames.length}, sorted=${sortedFrames.length}, offset=${offset}, limit=${limit}, returning=${result.length} frames`);
-    if (result.length > 0) {
-      console.log(`[DebugTracker] Frame range: ${result[result.length - 1].sequence} to ${result[0].sequence}`);
-    }
+    // console.log(`[DebugTracker] getFrames: total=${this.frames.length}, sorted=${sortedFrames.length}, offset=${offset}, limit=${limit}, returning=${result.length} frames`);
     
     return result;
   }
@@ -307,13 +302,10 @@ class DebugStateTracker extends EventEmitter implements DebugObserver {
 
     // If we exceed max frames, remove the oldest by sequence (not by insertion order)
     if (this.frames.length > this.maxFrames) {
-      console.log(`[DebugTracker] Frame limit exceeded: ${this.frames.length} > ${this.maxFrames}, removing oldest frames`);
       
       // Sort by sequence to find the oldest
       const sorted = [...this.frames].sort((a, b) => a.sequence - b.sequence);
       const toRemove = sorted.slice(0, this.frames.length - this.maxFrames);
-      
-      console.log(`[DebugTracker] Removing ${toRemove.length} frames, sequences: ${toRemove.map(f => f.sequence).join(', ')}`);
       
       // Remove the oldest frames
       for (const frame of toRemove) {
@@ -366,12 +358,12 @@ function inferFrameKind(
   fallback: 'incoming' | 'outgoing' = 'incoming'
 ): 'incoming' | 'outgoing' {
   if (Array.isArray(frame.events)) {
-    // Check for agent-generated events by looking at VEIL operations from agent elements
+    // Check for agent-generated events by looking at VEIL operations from agent elements/components
     const hasAgentEvents = frame.events.some(event => {
       if (event?.topic === 'veil:operation' && event.source) {
-        // Check if source is an agent element
+        // Check if source is an agent element/component
         return event.source.elementId?.includes('agent') || 
-               event.source.elementType === 'AgentElement';
+               event.source.elementType?.includes('Agent');
       }
       return false;
     });
@@ -414,17 +406,6 @@ interface SerializedComponent {
   state: Record<string, any>;
 }
 
-interface SerializedElement {
-  id: string;
-  name: string;
-  type: string;
-  active: boolean;
-  path: string[];
-  subscriptions: string[];
-  components: SerializedComponent[];
-  children: SerializedElement[];
-}
-
 function serializeComponent(component: Component): SerializedComponent {
   const state: Record<string, any> = {};
   for (const key of Object.keys(component as any)) {
@@ -440,44 +421,11 @@ function serializeComponent(component: Component): SerializedComponent {
   };
 }
 
-function serializeElement(element: Element): SerializedElement {
-  const children = Array.from(element.children || []).map(serializeElement);
-  const components = Array.from(element.components || []).map(c => serializeComponent(c as Component));
-  return {
-    id: element.id,
-    name: element.name,
-    type: element.constructor.name,
-    active: element.active,
-    path: element.getPath(),
-    subscriptions: [...element.subscriptions],
-    components,
-    children
-  };
-}
-
 interface SerializedVEILState {
   facets: Array<Facet & { id: string }>;
   streams: Array<{ id: string; info: StreamInfo }>;
   currentStream?: StreamRef;
   sequence: number;
-}
-
-// This function is deprecated - it doesn't include frameHistory!
-// Use the proper serializeVEILState from persistence/serialization instead
-function serializeVEILStateSimple(stateManager: VEILStateManager): SerializedVEILState {
-  const state = stateManager.getState();
-  return {
-    facets: Array.from(state.facets.values()).map(facet => ({
-      ...sanitizePayload(facet),
-      id: facet.id
-    })),
-    streams: Array.from(state.streams.entries()).map(([id, stream]) => ({
-      id,
-      info: stream
-    })),
-    currentStream: state.currentStream,
-    sequence: state.currentSequence
-  };
 }
 
 function sanitizeFacetTreeNode(facet: Facet, depth: number = 0): any {
@@ -550,7 +498,7 @@ export class DebugServer {
     const veilState = this.veilState.getState();
     const frameHistory = veilState.frameHistory;
     
-    console.log(`[DebugServer] Loading ${frameHistory.length} historical frames into tracker`);
+    // console.log(`[DebugServer] Loading ${frameHistory.length} historical frames into tracker`);
     
     // Convert VEIL frames to debug frame records
     frameHistory.forEach(frame => {
@@ -571,8 +519,6 @@ export class DebugServer {
       // Add the frame to the tracker
       this.tracker.loadHistoricalFrame(record);
     });
-    
-    console.log(`[DebugServer] After loading historical frames: tracker has ${(this.tracker as any).frames.length} frames`);
   }
 
   start(): void {
@@ -659,7 +605,7 @@ export class DebugServer {
     
     // Request logging middleware
     this.app.use((req, res, next) => {
-      console.log(`[DebugServer] Request: ${req.method} ${req.path}`);
+      // console.log(`[DebugServer] Request: ${req.method} ${req.path}`);
       next();
     });
     
@@ -685,12 +631,12 @@ export class DebugServer {
     console.log('[DebugServer] Setting up API routes...');
     
     this.app.get('/api/frames', (req, res) => {
-      console.log('[DebugServer] /api/frames requested');
+      // console.log('[DebugServer] /api/frames requested');
       const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : undefined;
       const offset = req.query.offset ? parseInt(String(req.query.offset), 10) : 0;
       const frames = this.tracker.getFrames(limit, offset);
       
-      // Enrich frames with rendered-context from VEIL (not from frame properties)
+      // Enrich frames with rendered-context from VEIL
       const enrichedFrames = frames.map(frame => {
         // Get VEIL state at this frame
         const veilSnapshot = this.veilState.getStateAtSequence(frame.sequence);
@@ -711,14 +657,14 @@ export class DebugServer {
           renderedContext = contextFacet ? (contextFacet as any).state?.context : null;
         }
         
-        // Fallback to frame property if not in VEIL
+        // Fallback to frame property
         if (!renderedContext && frame.renderedContext) {
           renderedContext = frame.renderedContext;
         }
         
         return {
           ...frame,
-          renderedContext  // Override with VEIL data
+          renderedContext
         };
       });
       
@@ -727,7 +673,7 @@ export class DebugServer {
       res.json(response);
     });
     
-    console.log('[DebugServer] Registered /api/frames route');
+    // console.log('[DebugServer] Registered /api/frames route');
 
     this.app.get('/api/frames/:uuid', (req, res) => {
       const frame = this.tracker.getFrame(req.params.uuid);
@@ -736,19 +682,15 @@ export class DebugServer {
         return;
       }
       
-      // Get VEIL state as it existed at this frame sequence
       const veilSnapshot = this.veilState.getStateAtSequence(frame.sequence);
       const facets = Array.from(veilSnapshot.facets.values());
       
-      // Extract rendered-context from VEIL facets (single source of truth)
-      // Find activation facets in this frame's deltas
       const activationFacet = (frame as any).deltas?.find((d: any) => 
         d.type === 'addFacet' && d.facet?.type === 'agent-activation'
       )?.facet;
       
       let renderedContext = null;
       if (activationFacet) {
-        // Find rendered-context facet for this activation
         const contextFacet = facets.find(f => 
           f.type === 'rendered-context' && 
           (f as any).state?.activationId === activationFacet.id
@@ -756,14 +698,13 @@ export class DebugServer {
         renderedContext = contextFacet ? (contextFacet as any).state?.context : null;
       }
       
-      // Fallback to frame property if not found in VEIL (for backwards compatibility)
       if (!renderedContext && frame.renderedContext) {
         renderedContext = frame.renderedContext;
       }
       
       res.json({
         ...frame,
-        renderedContext,  // Override with VEIL data
+        renderedContext,
         veilState: {
           facets: facets.map(f => sanitizeFacetTreeNode(f)),
           sequence: veilSnapshot.sequence,
@@ -784,28 +725,23 @@ export class DebugServer {
       // Check afferents using type guard
       if (isAfferent(component)) {
         metadata.martemRole = 'Afferent';
-        // Add afferent-specific metadata
         try {
           const status = component.getStatus();
           if (status) {
             metadata.status = status;
           }
-        } catch (e) {
-          // Ignore errors getting status
-        }
+        } catch (e) {}
         if (typeof component.getMetrics === 'function') {
           try {
             const metrics = component.getMetrics();
             if (metrics) {
               metadata.metrics = metrics;
             }
-          } catch (e) {
-            // Ignore errors getting metrics
-          }
+          } catch (e) {}
         }
       }
 
-      // Check receptors and gather topics
+      // Check receptors
       if ((space as any).receptors) {
         const topics: string[] = [];
         for (const [topic, receptors] of (space as any).receptors.entries()) {
@@ -834,7 +770,6 @@ export class DebugServer {
         metadata.martemRole = 'Maintainer';
       }
 
-      // Add common MARTEM properties if this is a MARTEM component
       if (metadata.martemRole) {
         if ((component as any).priority !== undefined) {
           metadata.priority = (component as any).priority;
@@ -849,37 +784,18 @@ export class DebugServer {
 
     this.app.get('/api/state', (_req, res) => {
       try {
-        // FLEX Phase 1: All components now in flat list
         const components = this.space.components || [];
-        const useDirectMounting = (this.space as any).isDirectMountingEnabled?.() || false;
-
-        // Serialize space structure without circular references
+        
+        // Serialize space structure
         const spaceInfo = {
           id: this.space.id,
           name: this.space.name,
-          components: this.space.components.map(c => ({
+          components: components.map(c => ({
             type: c.constructor.name,
-            id: c.element?.id || 'unknown',
+            id: c.id || 'unknown',
             ...getMartemMetadata(c, this.space)
-          })),
-          // FLEX Phase 1: All components in flat list
-          directComponents: components.map((c: any) => ({
-            type: c.constructor.name,
-            id: c.componentId || 'unknown',
-            ...getMartemMetadata(c, this.space)
-          })),
-          useDirectMounting,
-          children: this.space.children.map(child => ({
-            id: child.id,
-            name: child.name,
-            components: child.components.map(c => ({
-              type: c.constructor.name,
-              id: c.element?.id || 'unknown',
-              ...getMartemMetadata(c, this.space)
-            }))
           })),
           componentCount: components.length,
-          directComponentCount: components.length, // FLEX Phase 1
           receptorCount: (this.space as any).receptors?.size || 0,
           effectorCount: (this.space as any).effectors?.length || 0,
           transformCount: (this.space as any).transforms?.length || 0,
@@ -898,13 +814,17 @@ export class DebugServer {
       }
     });
 
+    // Legacy route support - returns component if found
     this.app.get('/api/elements/:id', (req, res) => {
-      const element = this.findElement(this.space, req.params.id);
-      if (!element) {
-        res.status(404).json({ error: 'element not found' });
+      const id = req.params.id;
+      // Try to find component
+      const component = this.space.getComponentById(id);
+      
+      if (!component) {
+        res.status(404).json({ error: 'component/element not found' });
         return;
       }
-      res.json(serializeElement(element));
+      res.json(serializeComponent(component));
     });
 
     this.app.get('/api/facets', (_req, res) => {
@@ -917,8 +837,16 @@ export class DebugServer {
         res.status(400).json({ error: 'topic is required' });
         return;
       }
-      const sourceElement = sourceId ? this.findElement(this.space, sourceId) : this.space;
-      const sourceRef = sourceElement ? sourceElement.getRef() : this.space.getRef();
+      
+      // Resolve source ref from ID (or default to space)
+      let sourceRef: ElementRef;
+      if (sourceId) {
+          const comp = this.space.getComponentById(sourceId);
+          sourceRef = comp ? comp.getRef() : this.space.getRef();
+      } else {
+          sourceRef = this.space.getRef();
+      }
+
       this.space.emit({
         topic,
         source: sourceRef,
@@ -929,21 +857,16 @@ export class DebugServer {
     });
 
     this.app.put('/api/elements/:id/props', (req, res) => {
-      const element = this.findElement(this.space, req.params.id);
-      if (!element) {
-        res.status(404).json({ error: 'element not found' });
-        return;
-      }
-      const { component, props } = req.body || {};
-      if (component === undefined) {
-        res.status(400).json({ error: 'component index or name required' });
-        return;
-      }
-      const comp = this.resolveComponent(element, component);
+      // Legacy support: map element ID to component ID
+      const id = req.params.id;
+      const comp = this.space.getComponentById(id);
+      
       if (!comp) {
         res.status(404).json({ error: 'component not found' });
         return;
       }
+      
+      const { props } = req.body || {};
       if (props && typeof props === 'object') {
         Object.entries(props).forEach(([key, value]) => {
           if (typeof (comp as any)[key] === 'function') {
@@ -1014,8 +937,8 @@ export class DebugServer {
       }
       
       try {
-        // Check if we have a TransitionManager available
-        const persistence = (this.space as any).persistence || (global as any).globalPersistence;
+        // Check if we have a PersistenceMaintainer available
+        const persistence = (this.space as any).persistence;
         if (!persistence) {
           res.status(503).json({ error: 'Persistence not available' });
           return;
@@ -1044,7 +967,6 @@ export class DebugServer {
         this.tracker.removeFramesBySequence(deletedSequences);
         
         // Save deletion record if we have persistence
-        let deletionRecord;
         if (persistence) {
           try {
             // Create a new snapshot after deletion
@@ -1149,53 +1071,5 @@ export class DebugServer {
         client.send(payload);
       }
     }
-  }
-
-  private findElement(root: Element, id: string): Element | null {
-    if (root.id === id) return root;
-    for (const child of root.children) {
-      const found = this.findElement(child, id);
-      if (found) return found;
-    }
-    return null;
-  }
-
-  private resolveComponent(element: Element, selector: number | string): Component | null {
-    const components = Array.from(element.components) as Component[];
-    if (typeof selector === 'number') {
-      return components[selector] || null;
-    }
-    return components.find(comp => comp.constructor.name === selector) || null;
-  }
-
-  private buildFacetSnapshot(sequence: number): { facets: any[]; sequence: number } {
-    const state = this.veilState.getState();
-    const temp = new VEILStateManager();
-    const framesToApply = state.frameHistory.filter(frame => frame.sequence <= sequence);
-    
-    
-    for (const frame of framesToApply) {
-      temp.applyFrame(frame);
-    }
-
-    let snapshot = temp.getState();
-    let facets = Array.from(snapshot.facets.values());
-    let facetDescriptions = facets.map(describeFacet);
-    
-    
-    if (facetDescriptions.length <= 1) {
-      const lastFrame = framesToApply[framesToApply.length - 1];
-      const liveState = this.veilState.getState();
-      const liveFacets = Array.from(liveState.facets.values());
-      if (liveFacets.length > facetDescriptions.length) {
-        facets = liveFacets;
-        snapshot = liveState;
-        facetDescriptions = facets.map(describeFacet);
-      }
-    }
-    return {
-      facets: facets.map(facet => sanitizeFacetTreeNode(facet)),
-      sequence: snapshot.currentSequence
-    };
   }
 }

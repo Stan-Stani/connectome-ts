@@ -13,9 +13,8 @@ import { ComponentRegistry } from '../persistence/component-registry';
 import { ConnectomeApplication } from './types';
 import { getReferenceMetadata, getExternalMetadata, RestorableComponent } from './decorators';
 import { Component } from '../spaces/component';
-import { Element } from '../spaces/element';
 import { SpaceEvent } from '../spaces/types';
-import { restoreVEILState, restoreElementTree } from '../persistence/restoration';
+import { restoreVEILState } from '../persistence/restoration';
 import { registerDebugHost, registerDebugSpace, registerDebugServer } from '../debug/debug-registry';
 
 export interface HostConfig {
@@ -30,6 +29,7 @@ export interface HostConfig {
   };
   providers?: {
     [key: string]: LLMProvider;
+    33?: LLMProvider;
   };
   secrets?: {
     [key: string]: string;
@@ -63,8 +63,8 @@ class HostHandlerComponent extends Component {
         await this.host.resolveExternalResources(component);
 
         // Call onReferencesResolved if it exists
-        if ('onReferencesResolved' in component && typeof component.onReferencesResolved === 'function') {
-          component.onReferencesResolved();
+        if ('onReferencesResolved' in component && typeof (component as any).onReferencesResolved === 'function') {
+          (component as any).onReferencesResolved();
         }
       }
     }
@@ -173,20 +173,11 @@ export class ConnectomeHost {
         snapshotInterval: this.config.persistence.snapshotInterval || 100
       });
 
-      // FLEX Phase 1: Mount directly (bypass tree)
-      (space as any).addComponentDirect(persistenceMaintainer, 'infrastructure:PersistenceMaintainer');
+      // Mount directly
+      space.addComponent(persistenceMaintainer, 'infrastructure:PersistenceMaintainer');
 
       // Store reference for debug server frame deletion
       (space as any).persistence = persistenceMaintainer;
-
-      // TODO: TransitionManager disabled - using PersistenceMaintainer instead
-      // this.transitionManager = new TransitionManager(space, veilState, {
-      //   snapshotInterval: this.config.persistence.snapshotInterval || 100,
-      //   storagePath: this.config.persistence.storageDir || './connectome-state'
-      // });
-
-      // Note: Shutdown handler should be added by the application, not here
-      // to avoid duplicate handlers
     }
 
     // Start debug server if enabled
@@ -216,7 +207,7 @@ export class ConnectomeHost {
    * Stop the host and clean up resources
    */
   async stop(): Promise<void> {
-    // Save final snapshot (the write lock in TransitionManager will prevent duplicates)
+    // Save final snapshot
     console.log('\n💾 Saving state before shutdown...');
     if (this.transitionManager) {
       await this.transitionManager.createSnapshot();
@@ -254,9 +245,8 @@ export class ConnectomeHost {
     this.referenceRegistry.set('space', space);
     this.referenceRegistry.set('veilState', veilState);
     
-    // Initialize core Element Tree infrastructure BEFORE app.initialize()
-    // This ensures element:create and component:add events can be handled
-    await this.initializeElementTreeInfrastructure(space);
+    // Initialize core infrastructure BEFORE app.initialize()
+    await this.initializeComponentInfrastructure(space);
     
     await app.initialize(space, veilState);
     await this.resolveAllReferences(space);
@@ -275,40 +265,25 @@ export class ConnectomeHost {
     this.referenceRegistry.set('veilState', veilState);
     
     // Register components with ComponentRegistry BEFORE restoration
-    // This ensures components can be created from element-tree facets
     app.getComponentRegistry();
     
     // Enter restoration mode BEFORE any component initialization
-    // This prevents frames from being created during setup
     space.setRestorationMode(true);
     
-    // Restore VEIL state from snapshot (includes element-tree facets)
+    // Restore VEIL state from snapshot
     await restoreVEILState(veilState, snapshot.veilState);
     
-    // NOW initialize Element Tree infrastructure (after VEIL is restored)
-    // This won't create frames because we're in restoration mode
-    await this.initializeElementTreeInfrastructure(space);
+    // NOW initialize infrastructure (after VEIL is restored)
+    await this.initializeComponentInfrastructure(space);
     
-    // Set up dynamic component handler BEFORE restoring elements
-    // This ensures it's ready to handle events from AxonLoader
+    // Set up dynamic component handler BEFORE restoring components
     this.setupDynamicComponentHandler(space);
-    
-    // Elements are now restored from element-tree facets in VEIL, not from elementTree
-    // (Old elementTree serialization is kept minimal for backward compatibility only)
     
     const afterTreeState = veilState.getState();
     console.log(`[Host] After VEIL restore: currentSeq=${afterTreeState.currentSequence}, frameCount=${afterTreeState.frameHistory.length}`);
     
-    // Check state immediately before persistence check
-    const beforePersistCheck = veilState.getState();
-    console.log(`[Host] Before persistence check: currentSeq=${beforePersistCheck.currentSequence}`);
-    
-    // Load and replay deltas since the snapshot (filtered by lifecycleId)
-    // Deltas are replayed synchronously in order, no event processing
+    // Load and replay deltas since the snapshot
     if (this.config.persistence?.enabled && this.storageAdapter) {
-      const beforeLoadDeltas = veilState.getState();
-      console.log(`[Host] Right before loadDeltas: currentSeq=${beforeLoadDeltas.currentSequence}`);
-      
       const deltas = await this.storageAdapter.loadDeltas(
         snapshot.sequence + 1, 
         undefined, 
@@ -316,21 +291,11 @@ export class ConnectomeHost {
       );
       
       if (deltas.length > 0) {
-        const preReplayState = veilState.getState();
-        const maxFrameInHistory = preReplayState.frameHistory.length > 0
-          ? Math.max(...preReplayState.frameHistory.map((f: any) => f.sequence))
-          : 0;
         console.log(`📼 Replaying ${deltas.length} deltas since snapshot (sequence ${snapshot.sequence})...`);
-        console.log(`[Host] Before replay: currentSeq=${preReplayState.currentSequence}, maxFrame=${maxFrameInHistory}, frameCount=${preReplayState.frameHistory.length}`);
         
         // Replay each delta frame synchronously to VEIL
-        // This updates facets and frameHistory, but doesn't trigger events
         for (const delta of deltas) {
-          console.log(`[Host] Applying delta ${delta.sequence}, frame ${delta.frame.sequence}, current: ${veilState.getState().currentSequence}`);
-          // applyFrame updates VEIL state synchronously
           const changes = veilState.applyFrame(delta.frame);
-          console.log(`[Host] Applied ${changes.length} changes: ${changes.map(c => `${c.type}:${(c as any).facet?.type || 'unknown'}`).join(', ')}`);
-          // Changes are returned but not processed - no receptors/effectors run
         }
         
         const finalSequence = veilState.getState().currentSequence;
@@ -338,38 +303,21 @@ export class ConnectomeHost {
       }
     }
     
-    // Reconstruct element tree from all element-tree facets in VEIL
-    // This includes both snapshot elements and any created in deltas
-    await this.reconstructElementsFromVEIL(space, veilState);
+    // Reconstruct components from element-tree facets in VEIL (legacy support)
+    await this.reconstructComponentsFromVEIL(space, veilState);
     
-    // Resync ElementTreeMaintainer's cache with restored elements
-    const maintainer = (space as any).maintainers?.find((m: any) => m.constructor.name === 'ElementTreeMaintainer');
-    if (maintainer && typeof maintainer.resyncCache === 'function') {
-      maintainer.resyncCache();
-    }
-    
-    // Manually trigger maintainer to create components from element-tree facets
-    // This must happen BEFORE exiting restoration mode
-    console.log('🔧 Creating components from element-tree facets...');
-    if (maintainer) {
-      const emptyFrame: any = { sequence: -1, timestamp: new Date().toISOString(), events: [], deltas: [] };
-      const result = await maintainer.process(emptyFrame, [], veilState.getState());
-      console.log(`✅ Maintainer created components: ${result.events?.length || 0} events, ${result.deltas?.length || 0} deltas`);
-    }
-    
-    // Exit restoration mode - allow normal event processing to resume
+    // Exit restoration mode
     space.setRestorationMode(false);
     
     console.log('✅ All components restored and mounted');
     
-    // Now resolve all references and external resources after components are ready
+    // Now resolve all references and external resources
     await this.resolveAllReferences(space);
     
     // Check for any dynamically loaded components that need resources resolved
-    // This handles components loaded by AxonLoader during restoration
     await this.resolveDynamicComponents(space);
     
-    // Complete mounting for all restored components now that external services are ready
+    // Complete mounting for all restored components
     console.log('🔧 Completing component mounting after restoration...');
     await space.completeMountForRestoration();
     
@@ -395,7 +343,6 @@ export class ConnectomeHost {
       const latest = snapshots[snapshots.length - 1];
       const snapshot = await this.storageAdapter.loadSnapshot(latest);
       
-      // If we have snapshots but they're invalid, we should fail
       if (!snapshot) {
         throw new Error(`Failed to load snapshot ${latest}: Invalid snapshot structure`);
       }
@@ -403,45 +350,31 @@ export class ConnectomeHost {
       return snapshot;
     } catch (error) {
       console.error('Failed to load snapshot:', error);
-      
-      // Re-throw the error to prevent falling back to fresh application
       throw error;
     }
   }
   
   /**
-   * Initialize core Element Tree infrastructure
-   * Handles declarative element and component creation via events
+   * Initialize core Component infrastructure
    */
-  private async initializeElementTreeInfrastructure(space: Space): Promise<void> {
-    const { ElementRequestReceptor, ElementTreeTransform, ElementTreeMaintainer } =
-      await import('../spaces/element-tree-receptors');
+  private async initializeComponentInfrastructure(space: Space): Promise<void> {
+    // Import ComponentManager dynamically
+    const { ComponentManager } = await import('../spaces/component-manager');
 
-    // FLEX Phase 1: Enable direct mounting mode
-    space.enableDirectMounting();
-    console.log('✨ FLEX Phase 1: Direct mounting enabled');
+    console.log('✨ FLEX Phase 2: Component architecture active');
 
-    // Mount infrastructure components
-    const receptor = new ElementRequestReceptor();
-    const transform = new ElementTreeTransform();
-    const maintainer = new ElementTreeMaintainer(space);
+    // Mount ComponentManager directly
+    const componentManager = new ComponentManager();
+    space.addComponent(componentManager, 'infrastructure:ComponentManager');
 
-    // FLEX Phase 1: Enable direct mounting in the maintainer (for shimming element:create)
-    maintainer.enableDirectMount();
-
-    // FLEX Phase 1: Mount infrastructure components directly (bypass tree)
-    (space as any).addComponentDirect(receptor, 'infrastructure:ElementRequestReceptor');
-    (space as any).addComponentDirect(transform, 'infrastructure:ElementTreeTransform');
-    (space as any).addComponentDirect(maintainer, 'infrastructure:ElementTreeMaintainer');
-
-    console.log('🔧 Element Tree infrastructure initialized with FLEX Phase 1 shimming');
+    console.log('🔧 Component infrastructure initialized');
   }
 
   /**
    * Resolve all component references and external resources
    */
   private async resolveAllReferences(space: Space): Promise<void> {
-    const components = this.getAllComponents(space);
+    const components = space.components;
     
     // First pass: resolve references
     for (const component of components) {
@@ -460,19 +393,6 @@ export class ConnectomeHost {
         await restorable.onReferencesResolved();
       }
     }
-  }
-  
-  /**
-   * Get all components in the space recursively
-   */
-  private getAllComponents(element: Element): Component[] {
-    const components: Component[] = [...element.components];
-    
-    for (const child of element.children) {
-      components.push(...this.getAllComponents(child));
-    }
-    
-    return components;
   }
   
   /**
@@ -500,20 +420,20 @@ export class ConnectomeHost {
   public async resolveExternalResources(component: Component): Promise<void> {
     const externals = getExternalMetadata(component);
     
-    console.log(`Resolving ${externals.length} external resources for ${component.constructor.name}`);
+    if (externals.length > 0) {
+      console.log(`Resolving ${externals.length} external resources for ${component.constructor.name}`);
+    }
     
     for (const ext of externals) {
       const [type, ...pathParts] = ext.resourcePath.split(':');
       const path = pathParts.join(':');
-      
-      console.log(`  - ${ext.propertyKey}: ${ext.resourcePath}`);
       
       let value: any;
       
       switch (type) {
         case 'secret':
           value = this.secrets.get(path);
-          console.log(`    Secret '${path}': ${value ? 'FOUND' : 'NOT FOUND'}`);
+          // console.log(`    Secret '${path}': ${value ? 'FOUND' : 'NOT FOUND'}`);
           break;
         case 'provider':
           value = this.providers.get(path);
@@ -528,7 +448,7 @@ export class ConnectomeHost {
       
       if (value) {
         (component as any)[ext.propertyKey] = value;
-        console.log(`    Injected into ${ext.propertyKey}`);
+        // console.log(`    Injected into ${ext.propertyKey}`);
       }
     }
   }
@@ -538,88 +458,37 @@ export class ConnectomeHost {
    */
   private async resolveDynamicComponents(space: Space): Promise<void> {
     console.log('[Host] Checking for dynamically loaded components needing resources...');
-    // Find all components that might need external resources
-    const checkElement = async (element: Element) => {
-      console.log(`[Host] Checking element: ${element.name} (${element.id}) with ${element.components.length} components`);
-      for (const component of element.components) {
-        console.log(`[Host]   - Component: ${component.constructor.name}`);
-        
-        // Special handling for AxonLoader - check if it has a loaded component
-        if (component.constructor.name === 'AxonLoaderComponent') {
-          const axonLoader = component as any;
-          if (axonLoader.loadedComponent) {
-            console.log(`[Host]     AxonLoader has loaded component: ${axonLoader.loadedComponent.constructor.name}`);
-            // Also check the loaded component
-            const loadedExternals = getExternalMetadata(axonLoader.loadedComponent);
-            if (loadedExternals.length > 0) {
-              console.log(`[Host]     Loaded component has ${loadedExternals.length} external resources`);
-              let needsResolution = false;
-              for (const ext of loadedExternals) {
-                if (!(axonLoader.loadedComponent as any)[ext.propertyKey]) {
-                  needsResolution = true;
-                  console.log(`[Host]       Missing: ${ext.propertyKey} (${ext.resourcePath})`);
-                }
-              }
-              
-              if (needsResolution) {
-                console.log(`🔌 Resolving resources for dynamically loaded: ${axonLoader.loadedComponent.constructor.name}`);
-                await this.resolveComponentReferences(axonLoader.loadedComponent);
-                await this.resolveExternalResources(axonLoader.loadedComponent);
-                
-                // Call onReferencesResolved if it exists
-                if ('onReferencesResolved' in axonLoader.loadedComponent && 
-                    typeof axonLoader.loadedComponent.onReferencesResolved === 'function') {
-                  axonLoader.loadedComponent.onReferencesResolved();
-                }
-              }
-            }
-          } else {
-            console.log(`[Host]     AxonLoader has not loaded any component yet`);
-          }
-        }
-        // Check if this component has external resources that haven't been resolved
-        const externals = getExternalMetadata(component);
-        if (externals.length > 0) {
-          console.log(`[Host]     Has ${externals.length} external resources`);
-          // Check if any required externals are missing
-          let needsResolution = false;
-          for (const ext of externals) {
-            if (!(component as any)[ext.propertyKey]) {
-              needsResolution = true;
-              break;
-            }
-          }
+    
+    for (const component of space.components) {
+      // Special handling for AxonLoader - check if it has a loaded component
+      if (component.constructor.name === 'AxonLoaderComponent') {
+        const axonLoader = component as any;
+        if (axonLoader.loadedComponent) {
+          // console.log(`[Host]     AxonLoader has loaded component: ${axonLoader.loadedComponent.constructor.name}`);
           
-          if (needsResolution) {
-            console.log(`🔌 Found component needing resource resolution: ${component.constructor.name}`);
-            await this.resolveComponentReferences(component);
-            await this.resolveExternalResources(component);
-            
-            // Call onReferencesResolved if it exists
-            if ('onReferencesResolved' in component && typeof component.onReferencesResolved === 'function') {
-              component.onReferencesResolved();
-            }
+          // Resolve resources for loaded component
+          await this.resolveComponentReferences(axonLoader.loadedComponent);
+          await this.resolveExternalResources(axonLoader.loadedComponent);
+          
+          if ('onReferencesResolved' in axonLoader.loadedComponent && 
+              typeof axonLoader.loadedComponent.onReferencesResolved === 'function') {
+            axonLoader.loadedComponent.onReferencesResolved();
           }
         }
       }
       
-      // Recursively check children
-      for (const child of element.children) {
-        await checkElement(child);
-      }
-    };
-    
-    // Start from space root
-    await checkElement(space);
+      // Standard resolution
+      await this.resolveComponentReferences(component);
+      await this.resolveExternalResources(component);
+    }
   }
   
   /**
    * Set up handler for dynamically loaded components
    */
   private setupDynamicComponentHandler(space: Space): void {
-    // FLEX Phase 1: Use direct component mounting instead of creating child element
     const componentId = '_host_handler:HostHandlerComponent';
-    const existingHandler = (space as any).getComponentById?.(componentId);
+    const existingHandler = space.getComponentById(componentId);
 
     if (existingHandler) {
       console.log('[Host] Found existing host handler from persistence');
@@ -628,12 +497,12 @@ export class ConnectomeHost {
       return;
     }
 
-    // Create new host handler component (no element wrapper needed)
+    // Create new host handler component
     console.log('[Host] Creating new host handler');
     const handler = new HostHandlerComponent(this);
 
-    // Mount directly to Space (FLEX Phase 1)
-    (space as any).addComponentDirect(handler, componentId);
+    // Mount directly
+    space.addComponent(handler, componentId);
 
     // Subscribe to axon component loaded events at space level
     space.subscribe('axon:component-loaded');
@@ -642,87 +511,54 @@ export class ConnectomeHost {
   }
   
   /**
-   * Reconstruct element tree from element-tree facets in VEIL
-   * Called after replaying deltas to materialize elements created in deltas
+   * Reconstruct components from element-tree facets in VEIL (for legacy snapshots)
    */
-  private async reconstructElementsFromVEIL(space: Space, veilState: VEILStateManager): Promise<void> {
-    const { Element } = await import('../spaces/element');
+  private async reconstructComponentsFromVEIL(space: Space, veilState: VEILStateManager): Promise<void> {
     const state = veilState.getState();
     
     // Find all active element-tree facets
     const elementFacets = Array.from(state.facets.values())
       .filter(f => f.type === 'element-tree' && (f as any).state?.active) as any[];
     
-    const elementCache = new Map<string, any>();
-    elementCache.set('root', space);
-    elementCache.set(space.id, space);
+    if (elementFacets.length === 0) return;
     
-    // Add existing elements to cache
-    for (const child of space.children) {
-      elementCache.set(child.id, child);
-    }
+    console.log(`[Host] Reconstructing components from ${elementFacets.length} element-tree facets...`);
+
+    // Sort to ensure consistency if needed, though flat list doesn't strictly require it
+    // except for maybe ID stability if indices are used
     
-    // Sort: parents before children
-    elementFacets.sort((a, b) => {
-      const aIsRoot = a.state?.parentId === 'root' || a.state?.parentId === space.id;
-      const bIsRoot = b.state?.parentId === 'root' || b.state?.parentId === space.id;
-      if (aIsRoot && !bIsRoot) return -1;
-      if (!aIsRoot && bIsRoot) return 1;
-      return 0;
-    });
-    
-    // Create elements from facets
     for (const facet of elementFacets) {
-      const { elementId, name, parentId, components } = facet.state;
+      const { elementId, components } = facet.state;
       
       // Skip root (Space itself)
-      if (elementCache.has(elementId)) {
-        console.log(`[Host] Element ${elementId} is Space root, skipping`);
-        // But restore components for root
-        if (elementId === 'root' || elementId === space.id) {
-          const rootElement = elementCache.get(elementId);
-          if (components && components.length > 0) {
-            await this.restoreComponentsForElement(rootElement, components);
-          }
-        }
-        continue;
+      if (elementId === 'root' || elementId === space.id) {
+         if (components && components.length > 0) {
+            await this.restoreComponentsForSpace(space, elementId, components);
+         }
+         continue;
       }
       
-      // Find parent
-      const parent = elementCache.get(parentId);
-      if (!parent) {
-        console.warn(`[Host] Parent ${parentId} not found for element ${elementId}`);
-        continue;
-      }
-      
-      // Create and add element
-      const element = new Element(name, elementId);
-      elementCache.set(elementId, element);
-      parent.addChild(element);
-      
-      console.log(`[Host] Reconstructed element: ${name} (${elementId}) with ${components?.length || 0} components`);
-      
-      // Restore components from element-tree facet
+      // Restore components for this "element"
       if (components && components.length > 0) {
-        await this.restoreComponentsForElement(element, components);
+        await this.restoreComponentsForSpace(space, elementId, components);
       }
     }
   }
   
   /**
-   * Restore components for an element from element-tree facet data
+   * Restore components for an element ID
    */
-  private async restoreComponentsForElement(element: any, components: any[]): Promise<void> {
+  private async restoreComponentsForSpace(space: Space, elementId: string, components: any[]): Promise<void> {
     const { ComponentRegistry } = await import('../persistence/component-registry');
     
     for (const compDef of components) {
       const { type, config } = compDef;
       
-      // Create component using registry (no-args constructor)
+      // Create component using registry
       const component = ComponentRegistry.create(type);
       
       if (!component) {
-        console.warn(`[Host] Failed to create component ${type} for element ${element.id}`);
+        console.warn(`[Host] Failed to create component ${type} for element ${elementId}`);
         continue;
       }
       
@@ -731,10 +567,23 @@ export class ConnectomeHost {
         Object.assign(component, config);
       }
       
-      // Add component (this will trigger onInit, onRestore, and queue onMount)
-      await element.addComponentAsync(component, true); // true = isRestoring
+      // Generate stable ID
+      // Try to find if this component already exists
+      const existing = space.components.find(c => 
+         c.constructor.name === type && 
+         (c as any).id?.startsWith(elementId)
+      );
+
+      if (existing) continue;
+
+      // Fallback ID generation
+      const componentIndex = components.indexOf(compDef);
+      const componentId = `${elementId}:${type}:${componentIndex}`;
       
-      console.log(`[Host]   Restored component: ${type}`);
+      // Add component
+      space.addComponent(component, componentId);
+      
+      console.log(`[Host]   Restored component: ${type} (${componentId})`);
     }
   }
 }

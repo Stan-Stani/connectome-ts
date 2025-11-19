@@ -47,8 +47,8 @@ export {
   TopicSubscription
 } from './spaces/types';
 export { Space } from './spaces/space';
-export { Element } from './spaces/element';
 export { Component as SpaceComponent } from './spaces/component';
+export { ComponentManager } from './spaces/component-manager';
 
 // Component base type export
 export * from './types/component';
@@ -90,14 +90,6 @@ export { StateTransitionTransform } from './transforms/state-transition-transfor
 export { ContinuationTransform } from './transforms/continuation-transform';
 export { CompressionTransform } from './transforms/compression-transform';
 export { FrameSnapshotTransform } from './transforms/frame-snapshot-transform';
-
-// Element tree system exports
-export { 
-  registerComponent,
-  ElementRequestReceptor,
-  ElementTreeTransform,
-  ElementTreeMaintainer
-} from './spaces/element-tree-receptors';
 
 // Validation exports
 export * from './validation/facet-validation';

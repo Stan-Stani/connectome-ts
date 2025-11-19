@@ -3,7 +3,6 @@
  * Provides default no-op implementations of Component lifecycle methods
  */
 
-import { Element } from '../spaces/element';
 import { Component } from '../spaces/component';
 import { 
   Modulator,
@@ -16,7 +15,7 @@ import {
   FacetDelta,
   EffectorResult
 } from '../spaces/receptor-effector-types';
-import { Frame, Facet, VEILDelta } from '../veil/types';
+import { Frame, VEILDelta } from '../veil/types';
 import { RETM_TYPE, RETM_TYPES } from '../utils/retm-type-guards';
 
 /**
@@ -28,13 +27,13 @@ export abstract class BaseModulator extends Component implements Modulator {
   abstract process(events: SpaceEvent[]): SpaceEvent[];
   
   reset?(): void;
-  
+
   // Implement Component interface requirements
-  async mount(element: Element): Promise<void> {
-    this.element = element;
+  onMount(): void {
+    // No-op by default
   }
   
-  async unmount(): Promise<void> {
+  onUnmount(): void {
     // No-op by default
   }
 }
@@ -48,17 +47,18 @@ export abstract class BaseReceptor extends Component implements Receptor {
   abstract topics: string[];
   abstract transform(event: SpaceEvent, state: ReadonlyVEILState): VEILDelta[];
   
-  async mount(element: Element): Promise<void> {
-    this.element = element;
-    
+  onMount(): void {
     // Auto-register with Space
-    const space = element.findSpace() as any;
-    if (space && space.addReceptor) {
-      space.addReceptor(this);
-    }
+    // Note: Space.addComponent already attempts auto-registration via _attach
+    // But if manually mounted or specific logic needed, it can go here.
+    // _attach in Component handles RETM registration now, so we might not need this.
+    // But for safety we can leave empty or double check.
+    // The base implementation in Component._attach handles:
+    // if (isReceptor(this)) space.addReceptor(this);
+    // So we don't need to do it here.
   }
   
-  async unmount(): Promise<void> {
+  onUnmount(): void {
     // No-op by default
   }
 }
@@ -73,17 +73,11 @@ export abstract class BaseTransform extends Component implements Transform {
   facetFilters?: import('../spaces/receptor-effector-types').FacetFilter[];
   abstract process(state: ReadonlyVEILState): VEILDelta[];
   
-  async mount(element: Element): Promise<void> {
-    this.element = element;
-    
-    // Auto-register with Space
-    const space = element.findSpace() as any;
-    if (space && space.addTransform) {
-      space.addTransform(this);
-    }
+  onMount(): void {
+    // Auto-registered by Component._attach
   }
   
-  async unmount(): Promise<void> {
+  onUnmount(): void {
     // No-op by default
   }
 }
@@ -97,17 +91,11 @@ export abstract class BaseEffector extends Component implements Effector {
   facetFilters?: import('../spaces/receptor-effector-types').FacetFilter[];
   abstract process(changes: FacetDelta[], state: ReadonlyVEILState): Promise<EffectorResult>;
   
-  async mount(element: Element): Promise<void> {
-    this.element = element;
-    
-    // Auto-register with Space
-    const space = element.findSpace() as any;
-    if (space && space.addEffector) {
-      space.addEffector(this);
-    }
+  onMount(): void {
+    // Auto-registered by Component._attach
   }
   
-  async unmount(): Promise<void> {
+  onUnmount(): void {
     // No-op by default
   }
 
@@ -136,17 +124,11 @@ export abstract class BaseMaintainer extends Component implements Maintainer {
   
   abstract process(frame: Frame, changes: FacetDelta[], state: ReadonlyVEILState): Promise<import('../spaces/receptor-effector-types').MaintainerResult>;
   
-  async mount(element: Element): Promise<void> {
-    this.element = element;
-    
-    // Auto-register with Space
-    const space = element.findSpace() as any;
-    if (space && space.addMaintainer) {
-      space.addMaintainer(this);
-    }
+  onMount(): void {
+    // Auto-registered by Component._attach
   }
   
-  async unmount(): Promise<void> {
+  onUnmount(): void {
     // No-op by default
   }
 }

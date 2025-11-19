@@ -49,6 +49,10 @@ export class AgentComponent extends VEILComponent implements RestorableComponent
     }
   }
   
+  get agentInstance(): AgentInterface | undefined {
+    return this.agent;
+  }
+
   setAgent(agent: AgentInterface) {
     this.agent = agent;
     // Save agent config for restoration
@@ -61,14 +65,14 @@ export class AgentComponent extends VEILComponent implements RestorableComponent
    * Called by Host after all references are resolved
    */
   async onReferencesResolved(): Promise<void> {
-    console.log(`[AgentComponent ${this.element?.id}] onReferencesResolved - config: ${!!this.agentConfig}, agent: ${!!this.agent}, llm: ${!!this.llmProvider}, veil: ${!!this.veilState}`);
+    console.log(`[AgentComponent ${this.id}] onReferencesResolved - config: ${!!this.agentConfig}, agent: ${!!this.agent}, llm: ${!!this.llmProvider}, veil: ${!!this.veilState}`);
 
     // If we have config but no agent, recreate it
     if (this.agentConfig && !this.agent && this.llmProvider && this.veilState) {
       console.log('✨ Recreating agent from config:', this.agentConfig.name || 'unnamed');
 
       // Check if there's a custom agent factory registered
-      const space = this.element?.space;
+      const space = this.space;
       const agentFactory = (space as any)?.getReference?.('agentFactory');
 
       if (agentFactory && typeof agentFactory === 'function') {
@@ -99,10 +103,10 @@ export class AgentComponent extends VEILComponent implements RestorableComponent
 
   onMount(): void {
     // Subscribe to relevant events
-    this.element.subscribe('frame:start');
-    this.element.subscribe('frame:end');
-    this.element.subscribe('agent:command');
-    this.element.subscribe('agent:pending-activation');
+    this.subscribe('frame:start');
+    this.subscribe('frame:end');
+    this.subscribe('agent:command');
+    this.subscribe('agent:pending-activation');
 
     // Agent registration will happen on first frame:start
   }
@@ -127,10 +131,10 @@ export class AgentComponent extends VEILComponent implements RestorableComponent
   private registerAgent(): void {
     if (this.agentRegistered) return;
 
-    console.log(`[AgentComponent ${this.element.id}] Registering agent...`);
+    console.log(`[AgentComponent ${this.id}] Registering agent...`);
     const agentInfo = {
-      id: this.element.id,
-      name: this.agentConfig?.name || this.element.name || 'Agent',
+      id: this.id,
+      name: this.agentConfig?.name || this.id || 'Agent',
       type: 'assistant',
       capabilities: ['chat', 'code', 'search'],
       metadata: {
@@ -155,7 +159,7 @@ export class AgentComponent extends VEILComponent implements RestorableComponent
     switch (event.topic) {
       case 'frame:start':
         // Register agent on first frame (agent might be created in onReferencesResolved)
-        console.log(`[AgentComponent ${this.element.id}] frame:start - agent: ${!!this.agent}, veilState: ${!!this.veilState}, registered: ${this.agentRegistered}`);
+        // console.log(`[AgentComponent ${this.id}] frame:start - agent: ${!!this.agent}, veilState: ${!!this.veilState}, registered: ${this.agentRegistered}`);
         if (!this.agentRegistered && this.agent && this.veilState) {
           this.registerAgent();
         }
@@ -177,7 +181,7 @@ export class AgentComponent extends VEILComponent implements RestorableComponent
   
   private async handleFrameEnd(event: FrameEndEvent): Promise<void> {
     // Handle agent processing directly in the component
-    const space = this.element.findSpace() as any;
+    const space = this.space;
     if (!space) return;
     
     const frame = space.getCurrentFrame();
@@ -201,12 +205,12 @@ export class AgentComponent extends VEILComponent implements RestorableComponent
       
       // Check by ID first, then by name
       if (targetAgentId) {
-        return targetAgentId === this.element.id;
+        return targetAgentId === this.id;
       }
       
       // If no ID specified, check by name (either element name or agent name from config)
-      const agentName = this.agentConfig?.name || this.element.name;
-      return !targetAgent || targetAgent === this.element.id || targetAgent === this.element.name || targetAgent === agentName;
+      const agentName = this.agentConfig?.name || this.id;
+      return !targetAgent || targetAgent === this.id || targetAgent === agentName;
     });
     
     if (!shouldHandle) return;
@@ -217,7 +221,7 @@ export class AgentComponent extends VEILComponent implements RestorableComponent
     }
     
     // Let the agent process the frame
-    const veilState = space.getVEILState();
+    const veilState = space.getVEILStateManager();
     const response = await this.agent.onFrameComplete(frame, veilState.getState());
     
     // If agent generated a response, process it synchronously
@@ -231,27 +235,26 @@ export class AgentComponent extends VEILComponent implements RestorableComponent
       const rawCompletion = (response as any).rawCompletion;
       delete (response as any).rawCompletion; // Clean up before passing
       
-      // Use distributeEvent directly to maintain proper event flow
-      // while avoiding the queue (which would defer to next frame)
-      await (space as any).distributeEvent({
+      // Use emit directly to maintain proper event flow
+      // Note: Phase 2 Space.emit puts in queue. To be "immediate" we might want to just process effects immediately?
+      // For now we emit 'agent:frame-ready' which might be handled by AgentEffector?
+      // Wait, 'agent:frame-ready' handling seems to be legacy.
+      // AgentInterface typically returns a frame structure directly.
+      // If response is a frame, we should probably apply it?
+      // But here we emit an event.
+      
+      this.emit({
         topic: 'agent:frame-ready',
-        source: this.element.getRef(),
         payload: {
           frame: response,
-          agentId: this.element.id,
-          agentName: this.element.name,
+          agentId: this.id,
+          agentName: this.agentConfig?.name || this.id,
           renderedContext, // Include rendered context for debug
           rawCompletion // Include raw completion for debug
         },
         priority: 'immediate',
         timestamp: Date.now()
       });
-    }
-    
-    // Log state for debugging
-    const state = this.agent.getState();
-    if (state.sleeping) {
-      console.log(`[Agent ${this.element.name}] Currently sleeping, may have ignored low-priority activations`);
     }
   }
 
@@ -260,11 +263,11 @@ export class AgentComponent extends VEILComponent implements RestorableComponent
     agentInfo?: AgentLifecycleFacet['state']['agentInfo']
   ): AgentLifecycleFacet {
     return {
-      id: `agent-lifecycle-${this.element?.id || 'unknown'}-${Date.now()}`,
+      id: `agent-lifecycle-${this.id || 'unknown'}-${Date.now()}`,
       type: 'agent-lifecycle',
       state: {
         operation,
-        agentId: this.element?.id || 'unknown',
+        agentId: this.id || 'unknown',
         agentInfo
       },
       ephemeral: true
@@ -290,9 +293,8 @@ export class AgentComponent extends VEILComponent implements RestorableComponent
     // If waking up, check for activation facets in state
     if (command.type === 'wake') {
       // Activation facets persist in state, so we just need to trigger processing
-      this.element.emit({
+      this.emit({
         topic: 'agent:wake',
-        source: this.element.getRef(),
         payload: {},
         timestamp: Date.now()
       });

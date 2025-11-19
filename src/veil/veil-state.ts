@@ -8,7 +8,6 @@ import {
 } from './types';
 import { FacetDelta } from '../spaces/receptor-effector-types';
 import { Space } from '../spaces/space';
-import { Element } from '../spaces/element';
 import { Component } from '../spaces/component';
 import { isForkInvariant } from '../spaces/types';
 import { getPersistenceMetadata } from '../persistence/decorators';
@@ -884,28 +883,19 @@ export class VEILStateManager {
     const invariant: ComponentInfo[] = [];
     const stateful: ComponentInfo[] = [];
     
-    const walk = (element: Element, path: string[] = []) => {
-      const currentPath = [...path, element.id];
+    space.components.forEach((component, index) => {
+      const info: ComponentInfo = {
+        component,
+        index
+      };
       
-      element.components.forEach((component, index) => {
-        const info: ComponentInfo = {
-          component,
-          element,
-          path: currentPath,
-          index
-        };
-        
-        if (isForkInvariant(component)) {
-          invariant.push(info);
-        } else {
-          stateful.push(info);
-        }
-      });
-      
-      element.children.forEach(child => walk(child, currentPath));
-    };
+      if (isForkInvariant(component)) {
+        invariant.push(info);
+      } else {
+        stateful.push(info);
+      }
+    });
     
-    walk(space);
     return { invariant, stateful };
   }
   
@@ -958,7 +948,6 @@ export class VEILStateManager {
       const metadata = getPersistenceMetadata(component);
       
       const snapshot: ComponentStateSnapshot = {
-        elementPath: info.path,
         componentIndex: info.index,
         className: component.constructor.name,
         persistentProperties: {}
@@ -1105,14 +1094,8 @@ export class VEILStateManager {
     snapshots: ComponentStateSnapshot[]
   ): Promise<void> {
     for (const snapshot of snapshots) {
-      const element = this.findElementByPath(space, snapshot.elementPath);
-      if (!element) {
-        console.warn(`Cannot find element for path: ${snapshot.elementPath.join('/')}`);
-        continue;
-      }
-      
       // Component should already exist, just restore state
-      const component = element.components[snapshot.componentIndex];
+      const component = space.components[snapshot.componentIndex];
       if (!component) {
         console.warn(`Component at index ${snapshot.componentIndex} not found`);
         continue;
@@ -1129,21 +1112,6 @@ export class VEILStateManager {
         );
       }
     }
-  }
-  
-  private findElementByPath(root: Element, path: string[]): Element | null {
-    let current = root;
-    
-    // Skip root in path if present
-    const searchPath = path[0] === root.id ? path.slice(1) : path;
-    
-    for (const id of searchPath) {
-      const child = current.findChild(id);
-      if (!child) return null;
-      current = child;
-    }
-    
-    return current;
   }
   
   private async triggerRecoveryFrame(space: Space, previousSequence: number): Promise<void> {
@@ -1167,8 +1135,6 @@ export class VEILStateManager {
 // Type definitions for frame deletion
 interface ComponentInfo {
   component: Component;
-  element: Element;
-  path: string[];
   index: number;
 }
 
@@ -1178,7 +1144,6 @@ interface ComponentCategorization {
 }
 
 interface ComponentStateSnapshot {
-  elementPath: string[];
   componentIndex: number;
   className: string;
   persistentProperties: Record<string, any>;

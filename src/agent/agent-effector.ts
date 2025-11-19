@@ -29,7 +29,6 @@ import { AgentComponent } from './agent-component';
 import { LLMProvider } from '../llm/llm-interface';
 import { getGlobalTracer, TraceStorage } from '../tracing';
 import { RenderedContext } from '../hud/types-v2';
-import { Element } from '../spaces/element';
 
 export class AgentEffector extends BaseEffector {
   // Watch for activation facets AND their rendered contexts
@@ -43,7 +42,7 @@ export class AgentEffector extends BaseEffector {
   private tracer?: TraceStorage;
   private cachedAgentId?: string;
 
-  async onMount(): Promise<void> {
+  onMount(): void {
     this.tracer = getGlobalTracer();
     // Agent lookup is lazy - happens in process() when first needed
   }
@@ -52,63 +51,59 @@ export class AgentEffector extends BaseEffector {
     if (this.agent) return; // Already found
 
     // Config properties are set via Object.assign, read them directly
-    const space = this.element?.findSpace();
+    const space = this.space;
     const agentElementId = (this as any).agentElementId;
 
-    console.log(`[AgentEffector.findAgent] Looking for agent with ID: ${agentElementId}`);
-    console.log(`[AgentEffector.findAgent] Space children:`, space?.children.map(c => `${c.name}(${c.id})`));
+    // console.log(`[AgentEffector.findAgent] Looking for agent with ID: ${agentElementId}`);
+    
+    if (!space) return;
 
-    if (agentElementId && space) {
-      const agentElement = space.children.find(c => c.id === agentElementId);
-      console.log(`[AgentEffector.findAgent] Found element by ID ${agentElementId}:`, !!agentElement);
-      if (agentElement) {
-        const agentComponents = agentElement.getComponents(AgentComponent);
-        console.log(`[AgentEffector.findAgent] AgentComponents found:`, agentComponents.length);
-        const agentComponent = agentComponents[0];
-        if (agentComponent) {
-          console.log(`[AgentEffector.findAgent] AgentComponent has agent:`, !!(agentComponent as any)?.agent);
-        }
-        this.agent = (agentComponent as any)?.agent;
-        if (this.agent) {
-          console.log(`[AgentEffector] Found agent in element ${agentElementId}`);
-        }
-      }
-    }
-
-    if (!this.agent) {
-      // Try 'discord-agent' first, then 'agent' as ultimate fallback
-      let agentElement = space?.children.find(c => c.name === 'discord-agent');
-      console.log(`[AgentEffector.findAgent] Fallback: Found element by name 'discord-agent':`, !!agentElement);
+    // Strategy 1: Look up by ID if provided
+    if (agentElementId) {
+      // Try exact match
+      let comp = space.getComponentById(agentElementId);
       
-      if (!agentElement) {
-        agentElement = space?.children.find(c => c.name === 'agent');
-        console.log(`[AgentEffector.findAgent] Fallback: Found element by name 'agent':`, !!agentElement);
+      // Try "ID:AgentComponent" suffix convention
+      if (!comp) {
+        comp = space.getComponentById(`${agentElementId}:AgentComponent`);
       }
-      if (agentElement) {
-        const agentComponent = agentElement.getComponents(AgentComponent)[0];
-        console.log(`[AgentEffector.findAgent] Fallback: AgentComponent found:`, !!agentComponent);
-        if (agentComponent) {
-          console.log(`[AgentEffector.findAgent] Fallback: AgentComponent has agent:`, !!(agentComponent as any)?.agent);
-        }
-        this.agent = (agentComponent as any)?.agent;
+      
+      if (comp instanceof AgentComponent) {
+        this.agent = comp.agentInstance;
         if (this.agent) {
-          console.log(`[AgentEffector] Found agent in element with name 'agent'`);
+           console.log(`[AgentEffector] Found agent via ID ${agentElementId}`);
+           return;
         }
       }
     }
 
-    // FLEX Phase 1: Check direct component registry as last resort
-    if (!this.agent && space && (space as any).getComponentById) {
-      // Try predefined ID from DiscordApp
-      const directComponent = (space as any).getComponentById('discord-agent:AgentComponent');
-      if (directComponent) {
-         console.log(`[AgentEffector.findAgent] Found direct component by ID 'discord-agent:AgentComponent'`);
-         this.agent = (directComponent as any).agent;
+    // Strategy 2: Search for any AgentComponent in the space
+    const agentComponents = space.getComponents(AgentComponent);
+    if (agentComponents.length > 0) {
+       // Prefer one that matches name "discord-agent" if multiple
+       // But for now just take the first one that has an agent instance
+       for (const comp of agentComponents) {
+         if (comp.agentInstance) {
+           this.agent = comp.agentInstance;
+           console.log(`[AgentEffector] Found agent via type scan: ${comp.id}`);
+           return;
+         }
+       }
+    }
+
+    // Strategy 3: Fallback to predefined IDs for Discord App compatibility
+    const fallbackIds = ['discord-agent', 'discord-agent:AgentComponent', 'agent', 'agent:AgentComponent'];
+    for (const id of fallbackIds) {
+      const comp = space.getComponentById(id);
+      if (comp instanceof AgentComponent && comp.agentInstance) {
+        this.agent = comp.agentInstance;
+        console.log(`[AgentEffector] Found agent via fallback ID ${id}`);
+        return;
       }
     }
 
     if (!this.agent) {
-      console.log('[AgentEffector.findAgent] FAILED to find agent anywhere');
+      // console.log('[AgentEffector.findAgent] FAILED to find agent anywhere');
     }
   }
   
@@ -121,7 +116,7 @@ export class AgentEffector extends BaseEffector {
 
     // Skip if agent not initialized yet
     if (!this.agent) {
-      console.log("[AgentEffector] skipping because no agent");
+      // console.log("[AgentEffector] skipping because no agent");
       return { events, externalActions };
     }
     
@@ -130,7 +125,7 @@ export class AgentEffector extends BaseEffector {
       if (change.type !== 'added') continue;
       
       if (change.facet.type === 'agent-activation') {
-        console.log("[AgentEffector] pondering an agent-activation facet");
+        // console.log("[AgentEffector] pondering an agent-activation facet");
 
         const activationId = change.facet.id;
         const activationState = hasStateAspect(change.facet)
@@ -233,15 +228,14 @@ export class AgentEffector extends BaseEffector {
         // Emit events first (they may trigger actions)
         for (const event of response.events) {
           console.log(`[AgentEffector] Emitting agent event: ${event.topic}`);
-          this.element.emit(event);
+          this.emit(event);
         }
 
         // Then emit facets for response
         for (const facet of response.facets) {
           console.log(`[AgentEffector] Emitting facet via veil:operation: ${facet.type} (${facet.id})`);
-          this.element.emit({
+          this.emit({
             topic: 'veil:operation',
-            source: this.element.getRef(),
             timestamp: Date.now(),
             payload: {
               operation: {
@@ -258,9 +252,8 @@ export class AgentEffector extends BaseEffector {
         console.error('[AgentEffector] Agent cycle error:', error);
 
         // Emit error event
-        this.element.emit({
+        this.emit({
           topic: 'veil:operation',
-          source: this.element.getRef(),
           timestamp: Date.now(),
           payload: {
             operation: {
@@ -368,8 +361,8 @@ export class AgentEffector extends BaseEffector {
   }
 
   private getAgentId(): string {
-    // Use the element's ID as the agent ID for consistency
-    return this.element.id;
+    // Use the component's ID as the agent ID for consistency
+    return this.id;
   }
   
   // Handle agent commands via facets
