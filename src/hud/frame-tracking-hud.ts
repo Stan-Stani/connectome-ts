@@ -669,7 +669,13 @@ export class FrameTrackingHUD implements CompressibleHUD {
     renderMode: 'focused' | 'unfocused' = 'focused'
   ): RenderedChunk[] {
     const chunks: RenderedChunk[] = [];
-    const renderedStates = new Map<string, { content: string; facetId: string; type: string; facet: Facet }>();
+    const renderedStates = new Map<string, { 
+      content: string; 
+      facetId: string; 
+      type: string; 
+      facet: Facet;
+      metadata?: any;
+    }>();
     
     // HUD just renders facets - no concept of "history dump"
     // If a domain wants wrapping, encode it in the facet's displayName or structure
@@ -686,11 +692,15 @@ export class FrameTrackingHUD implements CompressibleHUD {
             if (this.isFacetVisible(facet, replayedState)) {
               const rendered = this.renderFacet(facet, renderMode);
               if (rendered) {
+                // Check for attachments
+                const attachments = (facet.state?.metadata as any)?.attachments || (facet.state as any)?.attachments;
+                
                 renderedStates.set(facet.id, {
                   content: rendered,
                   facetId: facet.id,
                   type: facet.type,
-                  facet: facet
+                  facet: facet,
+                  metadata: { attachments }
                 });
               }
             }
@@ -711,11 +721,15 @@ export class FrameTrackingHUD implements CompressibleHUD {
           if (this.isFacetVisible(updatedFacet, replayedState)) {
             const rendered = this.renderFacet(updatedFacet, renderMode);
             if (rendered) {
+              // Check for attachments
+              const attachments = (updatedFacet.state?.metadata as any)?.attachments || (updatedFacet.state as any)?.attachments;
+
               renderedStates.set(operation.id, {
                 content: rendered,
                 facetId: operation.id,
                 type: updatedFacet.type,
-                facet: updatedFacet
+                facet: updatedFacet,
+                metadata: { attachments }
               });
             }
           }
@@ -737,7 +751,7 @@ export class FrameTrackingHUD implements CompressibleHUD {
           
           // Use pre-rendered state if available
           if (renderedStates.has(facet.id)) {
-            const { content, facetId, type, facet: stateFacet } = renderedStates.get(facet.id)!;
+            const { content, facetId, type, facet: stateFacet, metadata } = renderedStates.get(facet.id)!;
             const role = this.determineFacetRole(stateFacet);
             chunks.push(createRenderedChunk(
               content + '\n',
@@ -746,7 +760,10 @@ export class FrameTrackingHUD implements CompressibleHUD {
                 facetIds: [facetId], 
                 chunkType: type,
                 role: role,
-                metadata: { frameSequence: frame.sequence }
+                metadata: { 
+                  frameSequence: frame.sequence,
+                  attachments: metadata?.attachments
+                }
               }
             ));
             renderedStates.delete(facet.id);
@@ -768,6 +785,10 @@ export class FrameTrackingHUD implements CompressibleHUD {
           const rendered = this.renderFacet(facet, renderMode);
           if (rendered) {
             const role = this.determineFacetRole(facet);
+            
+            // Check for attachments in facet state (nested metadata) or top-level metadata
+            const attachments = (facet.state?.metadata as any)?.attachments || (facet.state as any)?.attachments;
+
             chunks.push(createRenderedChunk(
               rendered + '\n',
               this.estimateTokens(rendered),
@@ -775,7 +796,10 @@ export class FrameTrackingHUD implements CompressibleHUD {
                 facetIds: [facet.id],
                 chunkType: facet.type,
                 role: role,
-                metadata: { frameSequence: frame.sequence }
+                metadata: { 
+                  frameSequence: frame.sequence,
+                  attachments // Propagate attachments
+                }
               }
             ));
           }
@@ -786,7 +810,7 @@ export class FrameTrackingHUD implements CompressibleHUD {
           if (removals?.has(operation.id)) break;
           
           if (renderedStates.has(operation.id)) {
-            const { content, facetId, type, facet: stateFacet } = renderedStates.get(operation.id)!;
+            const { content, facetId, type, facet: stateFacet, metadata } = renderedStates.get(operation.id)!;
             const role = this.determineFacetRole(stateFacet);
             chunks.push(createRenderedChunk(
               content + '\n',
@@ -795,7 +819,10 @@ export class FrameTrackingHUD implements CompressibleHUD {
                 facetIds: [facetId], 
                 chunkType: type,
                 role: role,
-                metadata: { frameSequence: frame.sequence }
+                metadata: { 
+                  frameSequence: frame.sequence,
+                  attachments: metadata?.attachments 
+                }
               }
             ));
             renderedStates.delete(operation.id);
@@ -1251,6 +1278,7 @@ export class FrameTrackingHUD implements CompressibleHUD {
       // Group chunks within frame by role
       let currentRole: 'user' | 'assistant' | 'system' | null = null;
       let currentContent: string[] = [];
+      let currentAttachments: any[] = [];
       
       for (const chunk of frameChunks) {
         const role = chunk.role || 'system';
@@ -1260,14 +1288,22 @@ export class FrameTrackingHUD implements CompressibleHUD {
           const messageIndex = messages.length;
           frameToMessageIndex.set(frameSeq, messageIndex);
           
-          messages.push({
+          const message: any = {
             role: currentRole,
             content: currentContent.join('\n\n'),
             sourceFrames: {
               from: frameSeq,
               to: frameSeq
             }
-          });
+          };
+
+          if (currentAttachments.length > 0) {
+            if (!message.metadata) message.metadata = {};
+            message.metadata.attachments = [...currentAttachments];
+            currentAttachments = []; // Clear after attaching
+          }
+
+          messages.push(message);
           
           currentContent = [];
         }
@@ -1275,6 +1311,15 @@ export class FrameTrackingHUD implements CompressibleHUD {
         currentRole = role;
         if (chunk.content.trim()) {  // Skip empty chunks
           currentContent.push(chunk.content);
+        }
+
+        // Collect attachments
+        if (chunk.metadata?.attachments) {
+          if (Array.isArray(chunk.metadata.attachments)) {
+            currentAttachments.push(...chunk.metadata.attachments);
+          } else {
+            currentAttachments.push(chunk.metadata.attachments);
+          }
         }
       }
       
@@ -1301,6 +1346,11 @@ export class FrameTrackingHUD implements CompressibleHUD {
           message.metadata = {
             cacheControl: { type: 'ephemeral' as const }
           };
+        }
+
+        if (currentAttachments.length > 0) {
+          if (!message.metadata) message.metadata = {};
+          message.metadata.attachments = [...currentAttachments];
         }
         
         messages.push(message);
