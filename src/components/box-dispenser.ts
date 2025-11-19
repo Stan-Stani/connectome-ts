@@ -29,8 +29,8 @@ export class BoxDispenserComponent extends InteractiveComponent {
   
   onMount(): void {
     // Get other components
-    this.controlPanel = this.element.getComponent(ControlPanelComponent)!;
-    this.contentGenerator = this.element.getComponent(ContentGeneratorComponent)!;
+    this.controlPanel = this.getComponent(ControlPanelComponent)!;
+    this.contentGenerator = this.getComponent(ContentGeneratorComponent)!;
     
     // Register actions
     this.registerAction('dispense', async () => this.dispenseBox());
@@ -112,7 +112,7 @@ export class BoxDispenserComponent extends InteractiveComponent {
     });
     
     // Add box to the space
-    this.element.parent?.addChild(box);
+    this.space.addComponent(box); // Assuming createBox now returns Component or we adapt it
     
     // Update dispenser state - the transition renderer will handle the narrative
     this.updateState('dispenser-state', {
@@ -189,9 +189,9 @@ export class DispenseButtonComponent extends VEILComponent {
     });
     
     // Emit button press event
-    this.element.emit({
+    this.emit({
       topic: 'button:pressed',
-      source: this.element.getRef(),
+      source: this.getRef(),
       payload: {},
       timestamp: Date.now(),
       bubbles: true // Let it bubble up to dispenser

@@ -63,12 +63,12 @@ export class ContextTransform extends BaseTransform {
         const agentOptions = this.buildAgentOptions(activationState);
         
         // Get VEILStateManager from Space
-        const space = this.element?.findSpace() as any;
+        const space = this.space;
         // console.log(`[ContextTransform] Space:`, !!space, 'hasVEILStateManager:', !!(space?.getVEILStateManager));
         
         if (!space || !space.getVEILStateManager) {
-          console.error('[ContextTransform] Cannot access VEILStateManager - element not attached to Space');
-          console.error('[ContextTransform] Element:', this.element?.id, 'Space:', space?.id);
+          console.error('[ContextTransform] Cannot access VEILStateManager - component not attached to Space');
+          console.error('[ContextTransform] Component:', this.id, 'Space:', space?.id);
           continue;
         }
         

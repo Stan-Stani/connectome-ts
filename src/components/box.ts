@@ -124,10 +124,10 @@ class BoxInteractionComponent extends InteractiveComponent {
     const state = this.stateComponent.getState();
     if (!state.isOpen) {
       this.addFacet({
-        id: `${this.element.id}-actions`,
+        id: `${this.id}-actions`,
         type: 'ambient',
-        scope: [this.element.id],
-        content: `You can open this box with @${this.element.id}.open()`
+        scope: [this.id],
+        content: `You can open this box with @${this.id}.open()`
       });
     }
   }
@@ -137,7 +137,7 @@ class BoxInteractionComponent extends InteractiveComponent {
     
     if (state.isOpen) {
       this.addFacet({
-        id: `box-${this.element.id}-already-open`,
+        id: `box-${this.id}-already-open`,
         type: 'event',
         content: 'The box is already open!'
       });
@@ -153,7 +153,7 @@ class BoxInteractionComponent extends InteractiveComponent {
       type: 'agent-activation',
       content: `Box opened ${method}`,
       attributes: {
-        source: this.element.name,
+        source: this.id,
         reason: `Box opened ${method}`,
         priority: 'high'
       }

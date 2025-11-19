@@ -446,9 +446,9 @@ export class AxonLoaderComponent extends Component {
    * Load a RETM module and register its exports
    */
   private async loadRETMModule(moduleExports: any): Promise<void> {
-    const space = this.element?.space as Space | undefined;
+    const space = this.space;
     if (!space) {
-      throw new Error('Cannot load RETM module: element not attached to space');
+      throw new Error('Cannot load RETM module: component not attached to space');
     }
     
     console.log(`[AxonLoader] Loading RETM module with exports:`, Object.keys(moduleExports));

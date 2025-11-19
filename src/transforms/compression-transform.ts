@@ -156,7 +156,7 @@ export class CompressionTransform extends BaseTransform {
     console.log(`[CompressionTransform] Snapshots not available, re-rendering ${frameHistory.length} frames`);
     
     // Get VEILStateManager from Space
-    const space = this.element?.findSpace() as any;
+    const space = this.space as any;
     if (!space?.getVEILStateManager) {
       console.error('[CompressionTransform] Cannot get VEILStateManager from Space');
       return [];

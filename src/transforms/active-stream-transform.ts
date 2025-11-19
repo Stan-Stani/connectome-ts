@@ -18,7 +18,7 @@ export class ActiveStreamTransform extends BaseTransform {
   
   process(state: ReadonlyVEILState): VEILDelta[] {
     // Get current frame being processed
-    const space = this.element?.findSpace() as any;
+    const space = this.space as any;
     const frame = space?.getCurrentFrame();
     
     if (!frame) {

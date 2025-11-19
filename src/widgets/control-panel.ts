@@ -82,7 +82,7 @@ export abstract class ControlPanelComponent extends InteractiveComponent {
       payload: {
         panelId: this.getPanelId(),
         displayName: this.getPanelDisplayName(),
-        elementId: this.element.id,
+        componentId: this.id,
         componentType: this.constructor.name,
         tools: this.toolsMetadata,
         panelScope: this.getPanelScope()
