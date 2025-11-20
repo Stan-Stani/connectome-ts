@@ -189,9 +189,21 @@ export async function restoreComponent(data: SerializedComponent): Promise<Compo
  */
 export async function restoreSpace(space: Space, serialized: SerializedSpace): Promise<void> {
   console.log(`[Restoration] Restoring space ${serialized.id}`);
-  
+
+  // Support both new format (components) and legacy format (children)
+  const componentsData = serialized.components || (serialized as any).children;
+  if (!componentsData) {
+    console.warn('[Restoration] No components or children found in serialized space');
+    return;
+  }
+
+  if ((serialized as any).children && !serialized.components) {
+    console.warn('⚠️  [Restoration] DEPRECATED: Space uses legacy "children" field instead of "components"');
+    console.warn('    This will be automatically migrated on next snapshot save.');
+  }
+
   // Restore components
-  for (const componentData of serialized.components) {
+  for (const componentData of componentsData) {
     try {
       const component = await restoreComponent(componentData);
       if (component) {
@@ -220,10 +232,18 @@ export async function restoreFromSnapshot(
   
   // Step 1: Restore VEIL state
   await restoreVEILState(veilManager, snapshot.veilState);
-  
+
   // Step 2: Restore Space (replaces element tree restoration)
-  if (snapshot.space) {
-    await restoreSpace(space, snapshot.space);
+  // Support both new format (space) and legacy format (elementTree)
+  const spaceData = snapshot.space || (snapshot as any).elementTree;
+  if (spaceData) {
+    if ((snapshot as any).elementTree && !snapshot.space) {
+      console.warn('⚠️  [Restoration] DEPRECATED: Loading from legacy "elementTree" format');
+      console.warn('    Please resave this snapshot to migrate to the new "space" format.');
+    }
+    await restoreSpace(space, spaceData);
+  } else {
+    console.warn('[Restoration] No space or elementTree found in snapshot');
   }
   
   // Step 3: TODO - Restore compressed frame batches if present
