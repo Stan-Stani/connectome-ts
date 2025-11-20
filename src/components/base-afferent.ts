@@ -89,8 +89,8 @@ export abstract class BaseAfferent<TConfig = any, TCommand = any>
   
   // Override Component lifecycle methods
   
-  // onMount is no longer a no-op - we can use it for initialization if needed
-  // But strictly, Afferents initialize via initialize() called by the host/environment
+  // Afferents are initialized via initialize() called by the host/environment
+  // onMount can be overridden for additional setup if needed
   
   async onUnmount(): Promise<void> {
     await this.stop(true);

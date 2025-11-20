@@ -402,10 +402,8 @@ export class Space {
       return;
     }
     
-    // If we are processing a frame, buffer the event for next frame
-    // Unless it's immediate priority? The plan says "buffer shall be added to an event priority queue at the end of the frame".
-    // If I push to eventQueue now, it's fine because we dequeue ONE event per frame.
-    // But `frameEventBuffer` was requested.
+    // Queue events that arrive during frame processing
+    // These will be added to the main queue at the end of the current frame
     if (this.processingFrame) {
       this.frameEventBuffer.push(event);
     } else {
@@ -526,12 +524,7 @@ export class Space {
       // Emit frame:start (this is a system event, handled specially?)
       // Or just process components.
       // In Phase 3, we iterate components for THIS event.
-      // But we also have lifecycle events.
-      // frame:start is usually for initializing frame state.
-      // We can treat frame:start as an implicit event or just let components handle it if subscribed.
-      // But we are processing `event` now.
-      
-      // Prepare execution context
+      // Prepare execution context for component execution
       const context = {
         event,
         state: this.getReadonlyState(),
@@ -542,10 +535,8 @@ export class Space {
       };
 
       // Sequential Execution
-      // Copy list to allow mutation during iteration (adding components)
-      // But if we want "insert after current" to work, we need to be careful.
-      // Using index-based iteration on the live list allows appending/inserting.
-      // const executionList = [...this.components];
+      // Index-based iteration allows components to be added during execution
+      // Components can insert after current position using addComponent options
 
       for (let i = 0; i < this.components.length; i++) {
         const component = this.components[i];
@@ -590,14 +581,9 @@ export class Space {
       // Clean up ephemeral facets
       const ephemeralCleanup = this.veilState.cleanupEphemeralFacets();
       // cleanupEphemeralFacets returns changes that WERE applied (FacetDelta[])
-      // We just need to add them to the frame delta/change list if we track FacetDeltas?
-      // The current frame structure tracks VEILDelta (instructions), not FacetDelta (outcomes).
-      // But wait, frame also has 'deltas' which are VEILDelta.
-      // ephemeralCleanup are NOT VEILDelta. They are FacetDelta.
-      // So we can't push them to frame.deltas directly.
-      // If we want to record them, we'd need to convert them to VEILDelta or have a separate list.
-      // For now, we ignore recording them in frame.deltas to fix the type error.
-      // (Logic: they are implicitly cleaned up by state manager)
+      // Note: Ephemeral cleanup returns FacetDelta[], not VEILDelta[]
+      // Frame.deltas contains VEILDelta (VEIL operations), not outcome deltas
+      // Ephemeral cleanup is tracked implicitly by the state manager, not recorded in frame
       
       // Notify debug observers
         this.notifyDebugFrameComplete(this.currentFrame, {

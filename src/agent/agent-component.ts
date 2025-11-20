@@ -159,7 +159,6 @@ export class AgentComponent extends VEILComponent implements RestorableComponent
     switch (event.topic) {
       case 'frame:start':
         // Register agent on first frame (agent might be created in onReferencesResolved)
-        // console.log(`[AgentComponent ${this.id}] frame:start - agent: ${!!this.agent}, veilState: ${!!this.veilState}, registered: ${this.agentRegistered}`);
         if (!this.agentRegistered && this.agent && this.veilState) {
           this.registerAgent();
         }
@@ -235,14 +234,8 @@ export class AgentComponent extends VEILComponent implements RestorableComponent
       const rawCompletion = (response as any).rawCompletion;
       delete (response as any).rawCompletion; // Clean up before passing
       
-      // Use emit directly to maintain proper event flow
-      // Note: Phase 2 Space.emit puts in queue. To be "immediate" we might want to just process effects immediately?
-      // For now we emit 'agent:frame-ready' which might be handled by AgentEffector?
-      // Wait, 'agent:frame-ready' handling seems to be legacy.
-      // AgentInterface typically returns a frame structure directly.
-      // If response is a frame, we should probably apply it?
-      // But here we emit an event.
-      
+      // Emit agent:frame-ready event with the response frame
+      // This event is processed by downstream components (e.g., ActionEffector)
       this.emit({
         topic: 'agent:frame-ready',
         payload: {

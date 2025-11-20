@@ -37,20 +37,11 @@ export abstract class BaseModulator extends Component implements Modulator {
     const result = this.process([context.event]);
     
     if (result.length === 0) {
-      // Event consumed/filtered
-      // We can't easily "stop" execution here without signaling context
-      // Maybe set a flag on event?
-      (context.event as any).propagationStopped = true; 
+      // Event consumed/filtered - mark as stopped to prevent further processing
+      (context.event as any).propagationStopped = true;
     } else {
-      // Update current event with first result
-      // If modified, we should update context.event
-      // But context.event is reference. 
-      // We can try to mutate it or replace it if context allows (it's interface, but object)
-      // context.event = result[0]; // This assigns to local param property, doesn't change caller's reference unless context is passed by reference (it is object)
-      // But assignment to property of context works: context.event = result[0]
-      
+      // Replace event in context if modulator transformed it
       if (result[0] !== context.event) {
-         // Replace event in context for subsequent components
          context.event = result[0];
       }
       
@@ -84,12 +75,8 @@ export abstract class BaseReceptor extends Component implements Receptor {
   execute(context: ExecutionContext): void {
     console.warn(`[Deprecation] ${this.constructor.name} is a Receptor. Convert to Component.`);
     
-    // Check topic match
+    // Check topic match - verify event topic against receptor's declared topics
     if (!this.isSubscribedTo(context.event.topic)) {
-       // Receptors explicitly list topics, check those too if not in subscriptions
-       // But typically BaseReceptor doesn't auto-subscribe in legacy mode? 
-       // Space handles routing.
-       // In new Sequential mode, we must check manually.
        if (!this.topics.includes(context.event.topic)) {
          return;
        }
@@ -104,14 +91,8 @@ export abstract class BaseReceptor extends Component implements Receptor {
   }
 
   onMount(): void {
-    // Auto-register with Space
-    // Note: Space.addComponent already attempts auto-registration via _attach
-    // But if manually mounted or specific logic needed, it can go here.
-    // _attach in Component handles RETM registration now, so we might not need this.
-    // But for safety we can leave empty or double check.
-    // The base implementation in Component._attach handles:
-    // if (isReceptor(this)) space.addReceptor(this);
-    // So we don't need to do it here.
+    // Auto-registration handled by Component._attach
+    // Override for custom mounting logic if needed
   }
   
   onUnmount(): void {
@@ -131,10 +112,8 @@ export abstract class BaseTransform extends Component implements Transform {
   
   execute(context: ExecutionContext): void {
     console.warn(`[Deprecation] ${this.constructor.name} is a Transform. Convert to Component.`);
-    
-    // Transforms run on every frame/event in legacy? 
-    // Actually they ran in Phase 2 loop.
-    // Here they run once per event.
+
+    // Transforms execute once per event in priority order during frame processing
     const deltas = this.process(context.state);
     if (deltas && deltas.length > 0) {
       for (const delta of deltas) {
@@ -179,10 +158,8 @@ export abstract class BaseEffector extends Component implements Effector {
                      changes.push({ type: 'changed', facet: facet, oldFacet: facet }); // Approximation
                 }
             } else if (op.type === 'removeFacet') {
-                // Removed facet might be gone from state if applied immediately
-                // But maintainer logic is complex.
-                // For now, we skip removed or try to look up?
-                // changes.push({ type: 'removed', facet: ... });
+                // Removed facets may not be available in current state
+                // Skip tracking removed facets for now
             }
         }
     }

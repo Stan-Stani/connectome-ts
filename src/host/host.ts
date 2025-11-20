@@ -302,7 +302,7 @@ export class ConnectomeHost {
       }
     }
     
-    // Reconstruct components from element-tree facets in VEIL (legacy support)
+    // Phase 1 compatibility: Reconstruct components from element-tree facets in VEIL
     await this.reconstructComponentsFromVEIL(space, veilState);
     
     // Exit restoration mode
@@ -432,7 +432,6 @@ export class ConnectomeHost {
       switch (type) {
         case 'secret':
           value = this.secrets.get(path);
-          // console.log(`    Secret '${path}': ${value ? 'FOUND' : 'NOT FOUND'}`);
           break;
         case 'provider':
           value = this.providers.get(path);
@@ -447,7 +446,6 @@ export class ConnectomeHost {
       
       if (value) {
         (component as any)[ext.propertyKey] = value;
-        // console.log(`    Injected into ${ext.propertyKey}`);
       }
     }
   }
@@ -463,8 +461,6 @@ export class ConnectomeHost {
       if (component.constructor.name === 'AxonLoaderComponent') {
         const axonLoader = component as any;
         if (axonLoader.loadedComponent) {
-          // console.log(`[Host]     AxonLoader has loaded component: ${axonLoader.loadedComponent.constructor.name}`);
-          
           // Resolve resources for loaded component
           await this.resolveComponentReferences(axonLoader.loadedComponent);
           await this.resolveExternalResources(axonLoader.loadedComponent);
@@ -510,7 +506,7 @@ export class ConnectomeHost {
   }
   
   /**
-   * Reconstruct components from element-tree facets in VEIL (for legacy snapshots)
+   * Phase 1 compatibility: Reconstruct components from element-tree facets in VEIL
    */
   private async reconstructComponentsFromVEIL(space: Space, veilState: VEILStateManager): Promise<void> {
     const state = veilState.getState();

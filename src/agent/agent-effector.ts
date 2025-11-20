@@ -54,8 +54,6 @@ export class AgentEffector extends BaseEffector {
     const space = this.space;
     const agentElementId = (this as any).agentElementId;
 
-    // console.log(`[AgentEffector.findAgent] Looking for agent with ID: ${agentElementId}`);
-    
     if (!space) return;
 
     // Strategy 1: Look up by ID if provided
@@ -80,8 +78,7 @@ export class AgentEffector extends BaseEffector {
     // Strategy 2: Search for any AgentComponent in the space
     const agentComponents = space.getComponents(AgentComponent);
     if (agentComponents.length > 0) {
-       // Prefer one that matches name "discord-agent" if multiple
-       // But for now just take the first one that has an agent instance
+       // Use the first component with an agent instance
        for (const comp of agentComponents) {
          if (comp.agentInstance) {
            this.agent = comp.agentInstance;
@@ -101,10 +98,6 @@ export class AgentEffector extends BaseEffector {
         return;
       }
     }
-
-    if (!this.agent) {
-      // console.log('[AgentEffector.findAgent] FAILED to find agent anywhere');
-    }
   }
   
   async process(changes: FacetDelta[], state: ReadonlyVEILState): Promise<EffectorResult> {
@@ -116,16 +109,14 @@ export class AgentEffector extends BaseEffector {
 
     // Skip if agent not initialized yet
     if (!this.agent) {
-      // console.log("[AgentEffector] skipping because no agent");
       return { events, externalActions };
     }
-    
+
     // Check for new activations that have rendered contexts
     for (const change of changes) {
       if (change.type !== 'added') continue;
-      
+
       if (change.facet.type === 'agent-activation') {
-        // console.log("[AgentEffector] pondering an agent-activation facet");
 
         const activationId = change.facet.id;
         const activationState = hasStateAspect(change.facet)

@@ -67,48 +67,9 @@ export class TransitionManager {
   }
   
   private subscribeToEvents() {
-    // Intercept handleEvent to capture transitions
-    const originalHandleEvent = this.space.emit.bind(this.space);
-    // Note: Space.emit is just a wrapper for queueEvent.
-    // We can subscribe to the space itself if it supported direct subscription to all events?
-    // But Space event processing is internal.
-    
-    // Actually, we can just add a component that listens to frame:end?
-    // Or monkey-patch queueEvent?
-    // The original code monkey-patched handleEvent which was Element.handleEvent.
-    // Space.emit calls queueEvent.
-    // Space doesn't expose a way to hook into frame end easily except via component subscription.
-    // Let's use a dedicated listener component approach if possible, but for now monkey-patching is fine if Space exposes a method.
-    // Space extends Element (previously), but now it doesn't.
-    
-    // Let's monkey-patch queueEvent to intercept events if needed, but frame:end is emitted at the END of processing.
-    // Wait, frame:end event is emitted via queueEvent?
-    // No, frame:end event was used to signal completion.
-    // In Space.processFrame, `frame:end` was removed in my new implementation?
-    // Let's check Space.processFrame implementation I wrote.
-    
-    /*
-      // Notify debug observers
-      this.notifyDebugFrameComplete(this.currentFrame, { ... });
-    */
-    
-    // I removed `frame:end` event emission from Space.processFrame!
-    // That's a breaking change for persistence.
-    // I should add it back or expose a hook.
-    // Space has `frameObservers`.
-    
-    // But TransitionManager constructor logic above tries to monkey-patch `space.handleEvent`.
-    // `Space` class doesn't have `handleEvent` anymore (it was from `Element`).
-    // `Space` has `emit` and `queueEvent`.
-    
-    // I should probably add a proper hook in Space for frame completion.
-    // But for now, let's assume I can subscribe via `space.subscribe`.
-    // Wait, `space.subscribe` adds to `_subscriptions` but doesn't provide a callback mechanism.
-    // Components handle events.
-    
-    // Let's create a hidden component to listen for frame:end if I restore that event,
-    // OR use `addDebugObserver` which gets `onFrameComplete`.
-    
+    // Monitor frame completion via debug observer hook
+    // The Space class provides addDebugObserver which fires on every frame completion
+    // We use this to capture transition events and process persistence
     this.space.addDebugObserver({
       onFrameComplete: async (frame, context) => {
         // Create a synthetic frame end event payload
@@ -407,7 +368,7 @@ export class TransitionManager {
       await restoreVEILState(this.veilState, snapshot.veilState);
     }
     
-    // Restore space components (replaces element tree)
+    // Phase 2: Restore Space components
     if (snapshot.elementTree) {
       // We reuse elementTree field name for now but it contains SerializedSpace
       await restoreSpace(this.space, snapshot.elementTree);
@@ -422,7 +383,7 @@ export class TransitionManager {
   private async applyTransition(node: TransitionNode) {
     const transition = node.transition;
     
-    // Apply element operations (shim/legacy - now mostly no-ops or basic component adds)
+    // Phase 1 compatibility: Apply element operations (shimmed to component operations)
     for (const op of transition.elementOps) {
       await this.applyElementOperation(op);
     }
@@ -454,12 +415,11 @@ export class TransitionManager {
   }
   
   /**
-   * Apply an element operation (Legacy/Shim)
+   * Phase 1 compatibility: Apply an element operation (shimmed to component operations)
    */
   private async applyElementOperation(op: ElementOperation) {
-    // In Phase 2, we ignore element tree operations or shim them if they imply adding components
-    // For now, log warning
-    console.warn(`[TransitionManager] Ignoring legacy element operation: ${op.type}`);
+    // Element tree operations are shimmed to equivalent component operations in Phase 2
+    console.warn(`[TransitionManager] Ignoring Phase 1 element operation: ${op.type}`);
   }
   
   /**

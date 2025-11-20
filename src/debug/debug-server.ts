@@ -266,9 +266,7 @@ class DebugStateTracker extends EventEmitter implements DebugObserver {
     const end = limit ? offset + limit : sortedFrames.length;
     
     const result = sortedFrames.slice(start, end);
-    
-    // console.log(`[DebugTracker] getFrames: total=${this.frames.length}, sorted=${sortedFrames.length}, offset=${offset}, limit=${limit}, returning=${result.length} frames`);
-    
+
     return result;
   }
 
@@ -358,7 +356,7 @@ function inferFrameKind(
   fallback: 'incoming' | 'outgoing' = 'incoming'
 ): 'incoming' | 'outgoing' {
   if (Array.isArray(frame.events)) {
-    // Check for agent-generated events by looking at VEIL operations from agent elements/components
+    // Check for agent-generated events by looking at VEIL operations from agent components
     const hasAgentEvents = frame.events.some(event => {
       if (event?.topic === 'veil:operation' && event.source) {
         // Check if source is an agent element/component
@@ -498,8 +496,6 @@ export class DebugServer {
     const veilState = this.veilState.getState();
     const frameHistory = veilState.frameHistory;
     
-    // console.log(`[DebugServer] Loading ${frameHistory.length} historical frames into tracker`);
-    
     // Convert VEIL frames to debug frame records
     frameHistory.forEach(frame => {
       const inferredKind = inferFrameKind(frame, 'incoming');
@@ -605,7 +601,6 @@ export class DebugServer {
     
     // Request logging middleware
     this.app.use((req, res, next) => {
-      // console.log(`[DebugServer] Request: ${req.method} ${req.path}`);
       next();
     });
     
@@ -631,7 +626,6 @@ export class DebugServer {
     console.log('[DebugServer] Setting up API routes...');
     
     this.app.get('/api/frames', (req, res) => {
-      // console.log('[DebugServer] /api/frames requested');
       const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : undefined;
       const offset = req.query.offset ? parseInt(String(req.query.offset), 10) : 0;
       const frames = this.tracker.getFrames(limit, offset);
@@ -673,8 +667,6 @@ export class DebugServer {
       res.json(response);
     });
     
-    // console.log('[DebugServer] Registered /api/frames route');
-
     this.app.get('/api/frames/:uuid', (req, res) => {
       const frame = this.tracker.getFrame(req.params.uuid);
       if (!frame) {
@@ -860,7 +852,7 @@ export class DebugServer {
     });
 
     this.app.put('/api/elements/:id/props', (req, res) => {
-      // Legacy support: map element ID to component ID
+      // Phase 1 compatibility: map element ID to component ID
       const id = req.params.id;
       const comp = this.space.getComponentById(id);
       
