@@ -566,9 +566,11 @@ export class Space {
       }
       
       // Flush buffer to event queue
+      // Push directly to eventQueue instead of calling queueEvent() to avoid
+      // re-buffering while processingFrame is still true
       if (this.frameEventBuffer.length > 0) {
         for (const bufferedEvent of this.frameEventBuffer) {
-          this.queueEvent(bufferedEvent);
+          this.eventQueue.push(bufferedEvent);
         }
         this.frameEventBuffer = [];
       }
