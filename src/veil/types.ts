@@ -93,17 +93,32 @@ export interface Frame {
   events: SpaceEvent[];    // Events processed in this frame
   deltas: VEILDelta[];     // Exotemporal changes
   transition: FrameTransition;
-  
+
   /**
    * Optional: Snapshot of how this frame rendered at creation time
-   * 
+   *
    * Captures the original subjective experience as chunked rendered content.
    * Preserves what this frame looked like when it was created, even if later
    * transforms modify earlier frames.
-   * 
+   *
    * May not be present on older frames or if snapshot capture is disabled.
    */
   renderedSnapshot?: FrameRenderedSnapshot;
+}
+
+/**
+ * Readonly view of a Frame for component execution contexts.
+ * Components can read frame metadata and deltas but cannot mutate them.
+ */
+export interface ReadonlyFrame {
+  readonly sequence: number;
+  readonly timestamp: string;
+  readonly uuid?: string;
+  readonly activeStream?: StreamRef;
+  readonly events: readonly SpaceEvent[];
+  readonly deltas: readonly VEILDelta[];
+  readonly transition: FrameTransition;
+  readonly renderedSnapshot?: FrameRenderedSnapshot;
 }
 
 

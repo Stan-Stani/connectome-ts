@@ -537,6 +537,7 @@ export class Space {
         state: this.getReadonlyState(),
         sequence: frame.sequence,
         timestamp: frame.timestamp,
+        frame: frame as import('../veil/types').ReadonlyFrame,
         bufferedEvents: this.frameEventBuffer
       };
 

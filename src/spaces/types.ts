@@ -3,7 +3,7 @@
  */
 
 import { FrameTransition } from '../persistence/transition-types';
-import type { ReadonlyVEILState, Frame } from '../veil/types';
+import type { ReadonlyVEILState, ReadonlyFrame } from '../veil/types';
 
 /**
  * Execution context passed to components during frame processing
@@ -14,7 +14,14 @@ export interface ExecutionContext {
   // Flattened metadata
   sequence: number;
   timestamp: string;
-  
+
+  /**
+   * Readonly view of the current frame being processed.
+   * Provides access to frame metadata and deltas for inspection.
+   * Components CANNOT mutate the frame - use this.addOperation() instead.
+   */
+  frame: ReadonlyFrame;
+
   /**
    * Mutable buffer of OUTGOING events emitted during this frame.
    * Components can inspect, modify, or cancel events emitted by earlier components
