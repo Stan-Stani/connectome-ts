@@ -112,7 +112,7 @@ export interface Receptor extends Component {
    * Optional priority for execution order (lower = runs earlier).
    * Default: 50
    */
-  priority?: number;
+  // Inherited from Component: priority: number;
   
   /** Which event topics this receptor handles */
   topics: string[];
@@ -151,7 +151,7 @@ export interface Transform extends Component {
    * 
    * If unspecified, uses registration order.
    */
-  priority?: number;
+  // Inherited from Component: priority: number;
   
   /** Optional filters to limit which facets trigger this transform */
   facetFilters?: FacetFilter[];
@@ -173,7 +173,7 @@ export interface Effector extends Component {
    * Optional priority for execution order (lower = runs earlier).
    * Default: 50
    */
-  priority?: number;
+  // Inherited from Component: priority: number;
   
   /** Which facet types/patterns this effector watches */
   facetFilters?: FacetFilter[];
@@ -247,7 +247,7 @@ export interface Maintainer extends Component {
    * Optional priority for execution order (lower = runs earlier).
    * Default: 50
    */
-  priority?: number;
+  // Inherited from Component: priority: number;
   
   /** 
    * Perform maintenance operations

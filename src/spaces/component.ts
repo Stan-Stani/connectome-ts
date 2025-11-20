@@ -1,4 +1,4 @@
-import { ComponentLifecycle, EventHandler, SpaceEvent, ElementRef } from './types';
+import { ComponentLifecycle, EventHandler, SpaceEvent, ElementRef, ExecutionContext } from './types';
 import type { Space } from './space';
 import type { VEILDelta } from '../veil/types';
 import {
@@ -36,6 +36,12 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
    * Topic subscriptions
    */
   private _subscriptions: string[] = [];
+
+  /**
+   * Execution priority (lower runs earlier)
+   * Default: 0
+   */
+  priority: number = 0;
 
   get enabled(): boolean {
     return this._enabled;
@@ -117,6 +123,16 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
    */
   onFirstFrame?(): void | Promise<void>;
   
+  /**
+   * Process the current frame event
+   * Called sequentially for each component in the execution list
+   * 
+   * @param context The execution context containing event, state, and frame
+   */
+  execute(context: ExecutionContext): void {
+    // No-op by default
+  }
+
   /**
    * Get a reference from the host registry with helpful errors
    */
@@ -359,6 +375,12 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
       throw new Error(
         `[${this.constructor.name}] Cannot add operation - component not attached to space`
       );
+    }
+    
+    // Phase 3: Apply immediately via Space
+    if ('applyOperation' in this.space) {
+      (this.space as any).applyOperation(operation);
+      return;
     }
     
     const frame = (this.space as any).getCurrentFrame ? (this.space as any).getCurrentFrame() : undefined;
@@ -658,6 +680,12 @@ export abstract class VEILComponent extends Component {
       );
     }
     
+    // Phase 3: Apply immediately via Space
+    if ('applyOperation' in this.space) {
+      (this.space as any).applyOperation(operation);
+      return;
+    }
+    
     frame.deltas.push(operation);
   }
   
@@ -666,6 +694,15 @@ export abstract class VEILComponent extends Component {
    */
   protected processDeferredOperations(): void {
     if (this._deferredOperations && this.space) {
+      // Phase 3: Apply immediately via Space
+      if ('applyOperation' in this.space) {
+         for (const op of this._deferredOperations) {
+            (this.space as any).applyOperation(op);
+         }
+         this._deferredOperations = undefined;
+         return;
+      }
+
       const frame = (this.space as any).getCurrentFrame ? (this.space as any).getCurrentFrame() : undefined;
       console.log(`[VEILComponent.processDeferredOperations] frame exists: ${!!frame}, operations: ${this._deferredOperations.length}`);
       if (frame) {

@@ -111,13 +111,9 @@ export class Space {
   
   private debugServerInstance?: DebugServer;
   
-  // MARTEM architecture components
-  private modulators: Modulator[] = [];
-  private receptors: Map<string, Receptor[]> = new Map();
-  private transforms: Transform[] = [];
-  private effectors: Effector[] = [];
-  private maintainers: Maintainer[] = [];
-
+  // Frame event buffer for sequential execution
+  private frameEventBuffer: SpaceEvent[] = [];
+  
   // Lifecycle ID - persists for the entire life of this Space instance
   public readonly lifecycleId: string;
   
@@ -162,7 +158,16 @@ export class Space {
   /**
    * Add a component to the Space
    */
-  addComponent<T extends Component>(component: T, componentId?: string, isRestoring: boolean = false): T {
+  addComponent<T extends Component>(
+    component: T, 
+    componentId?: string, 
+    isRestoring: boolean = false,
+    options?: {
+      priority?: number;
+      after?: Component | string;
+      before?: Component | string;
+    }
+  ): T {
     // Generate stable ID if not provided
     const id = componentId || `component-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
@@ -172,8 +177,53 @@ export class Space {
       return this.componentRegistry.get(id) as T;
     }
 
+    // Apply priority if provided
+    if (options?.priority !== undefined) {
+      component.priority = options.priority;
+    }
+
+    // Handle insertion constraints
+    let insertIndex = -1;
+    
+    if (options?.after) {
+       // Insert after specific component
+       const target = typeof options.after === 'string' 
+         ? this.getComponentById(options.after) 
+         : options.after;
+       if (target) {
+         const idx = this.components.indexOf(target);
+         if (idx !== -1) insertIndex = idx + 1;
+       }
+    } else if (options?.before) {
+       // Insert before specific component
+       const target = typeof options.before === 'string'
+         ? this.getComponentById(options.before)
+         : options.before;
+       if (target) {
+         const idx = this.components.indexOf(target);
+         if (idx !== -1) insertIndex = idx;
+       }
+    } else if (options?.after === 'current') {
+        // Insert after currently executing component (if processing frame)
+        // We need to track current component index in processFrame
+        // For now, append to end if not in frame, or use specific logic if needed
+    }
+
     // Register component
-    this.components.push(component);
+    if (insertIndex !== -1) {
+      this.components.splice(insertIndex, 0, component);
+    } else {
+      this.components.push(component);
+    }
+    
+    // Sort by priority if no explicit position constraints were used to force order?
+    // Or always sort? If we sort, 'after'/'before' might be lost if priorities conflict.
+    // For Phase 3, let's assume priority dominates unless explicit position is given.
+    // If we didn't insert at specific index, we sort.
+    if (insertIndex === -1) {
+      this.sortComponents();
+    }
+
     this.componentRegistry.set(id, component);
 
     // Mount to Space
@@ -250,42 +300,56 @@ export class Space {
     }
   }
 
-  // MARTEM registration methods
+  /**
+   * Sort components by priority
+   */
+  private sortComponents(): void {
+    this.components.sort((a, b) => a.priority - b.priority);
+  }
+
+  /**
+   * Apply a VEIL operation immediately
+   * Called by components during execution
+   */
+  applyOperation(operation: VEILDelta): void {
+    if (!this.processingFrame || !this.currentFrame) {
+      console.warn('[Space] applyOperation called outside of frame processing');
+      return;
+    }
+    
+    // Apply to VEIL state
+    this.veilState.applyDeltasDirect([operation]);
+    
+    // Record in frame
+    this.currentFrame.deltas.push(operation);
+  }
+
+  // MARTEM registration shims - map to components list
   
   addModulator(modulator: Modulator): void {
-    this.modulators.push(modulator);
+    // Already added via addComponent, ensure priority/sorting
+    modulator.priority = 0;
+    this.sortComponents();
   }
   
   addReceptor(receptor: Receptor): void {
-    for (const topic of receptor.topics) {
-      const topicReceptors = this.receptors.get(topic) || [];
-      topicReceptors.push(receptor);
-      this.receptors.set(topic, topicReceptors);
-      console.log(`[Space.addReceptor] Registered ${receptor.constructor.name} for topic '${topic}', now ${topicReceptors.length} receptors for this topic`);
-    }
+    receptor.priority = 100;
+    this.sortComponents();
   }
   
   addTransform(transform: Transform): void {
-    this.transforms.push(transform);
-    
-    // Sort: prioritized transforms first (by priority), then unprioritized (maintain order)
-    this.transforms.sort((a, b) => {
-      const aPriority = a.priority;
-      const bPriority = b.priority;
-      
-      if (aPriority !== undefined && bPriority !== undefined) return aPriority - bPriority;
-      if (aPriority !== undefined) return -1;
-      if (bPriority !== undefined) return 1;
-      return 0;
-    });
+    transform.priority = 200;
+    this.sortComponents();
   }
   
   addEffector(effector: Effector): void {
-    this.effectors.push(effector);
+    effector.priority = 300;
+    this.sortComponents();
   }
   
   addMaintainer(maintainer: Maintainer): void {
-    this.maintainers.push(maintainer);
+    maintainer.priority = 400;
+    this.sortComponents();
   }
 
   /**
@@ -336,7 +400,16 @@ export class Space {
       return;
     }
     
-    this.eventQueue.push(event);
+    // If we are processing a frame, buffer the event for next frame
+    // Unless it's immediate priority? The plan says "buffer shall be added to an event priority queue at the end of the frame".
+    // If I push to eventQueue now, it's fine because we dequeue ONE event per frame.
+    // But `frameEventBuffer` was requested.
+    if (this.processingFrame) {
+      this.frameEventBuffer.push(event);
+    } else {
+      this.eventQueue.push(event);
+      this.requestFrame();
+    }
     
     this.tracer?.record({
       id: `evt-${Date.now()}`,
@@ -436,88 +509,89 @@ export class Space {
         queuedEvents: this.eventQueue.length
       });
       
-      // Drain event queue
-      const events: SpaceEvent[] = [];
-      while (!this.eventQueue.isEmpty()) {
-        const event = this.eventQueue.shift();
-        if (event) {
-          events.push(event);
+      // Drain event queue - Take ONE event
+      const event = this.eventQueue.shift();
+      
+      if (!event) {
+        // Should not happen if loop check is correct, but safety first
+        this.processingFrame = false;
+        return;
+      }
+      
+      // Record processed event in frame
+      frame.events = [event];
+      
+      // Emit frame:start (this is a system event, handled specially?)
+      // Or just process components.
+      // In Phase 3, we iterate components for THIS event.
+      // But we also have lifecycle events.
+      // frame:start is usually for initializing frame state.
+      // We can treat frame:start as an implicit event or just let components handle it if subscribed.
+      // But we are processing `event` now.
+      
+      // Prepare execution context
+      const context = {
+        event,
+        state: this.getReadonlyState(),
+        frame
+      };
+      
+      // Sequential Execution
+      // Copy list to allow mutation during iteration (adding components)
+      // But if we want "insert after current" to work, we need to be careful.
+      // Using index-based iteration on the live list allows appending/inserting.
+      // const executionList = [...this.components]; 
+      
+      for (let i = 0; i < this.components.length; i++) {
+        const component = this.components[i];
+        if (!component.enabled) continue;
+        
+        try {
+          // Execute component logic
+          component.execute(context);
+          
+          // Also deliver event to handleEvent (legacy/direct subscription)
+          // This maintains compatibility with components using handleEvent
+          // but not yet migrated to execute() logic (if any)
+          // OR if execute() is the new way, maybe handleEvent is called internally?
+          // Component.execute is no-op by default. 
+          // If we want legacy handleEvent to work, we should call it.
+          if (component.isSubscribedTo(event.topic)) {
+             await component.handleEvent(event);
+          }
+          
+        } catch (error) {
+          console.error(`[Space] Error executing component ${component.constructor.name}:`, error);
         }
       }
       
-      // PHASE 0: Event preprocessing (via Modulators)
-      const processedEvents = this.runPhase0(events);
-      
-      // Emit frame:start to components
-      const frameStartEvent: SpaceEvent = {
-        topic: 'frame:start',
-        source: this.getRef(),
-        payload: { frameId },
-        timestamp: Date.now()
-      };
-      await this.deliverEventToComponents(frameStartEvent);
-      
-      // Apply any deltas that components added during frame:start
-      const componentDeltas = frame.deltas.length > 0 ? [...frame.deltas] : [];
-      const componentChanges = componentDeltas.length > 0 
-        ? this.veilState.applyDeltasDirect(componentDeltas)
-        : [];
-      
-      // Record processed events in frame
-      frame.events = processedEvents;
-      
-      // Deliver events to subscribed components
-      for (const event of processedEvents) {
-        await this.deliverEventToComponents(event);
-      }
-      
-      // PHASE 1: Events → VEIL (via Receptors)
-      const phase1Deltas = this.runPhase1(processedEvents);
-      const phase1Changes = this.veilState.applyDeltasDirect(phase1Deltas);
-      
-      // PHASE 2: VEIL → VEIL (via Transforms)
-      const phase2Result = this.runPhase2();
-      const allPhase2Deltas = phase2Result.deltas;
-      const allPhase2Changes = phase2Result.changes;
-      
-      // Collect all deltas into frame BEFORE Phase 4
-      frame.deltas = [...componentDeltas, ...phase1Deltas, ...allPhase2Deltas];
-      
-      // Collect all changes
-      const allChanges = [...componentChanges, ...phase1Changes, ...allPhase2Changes];
-      
-      // PHASE 3: VEIL → Events (via Effectors)
-      const newEvents = await this.runPhase3(allChanges);
-      
-      // PHASE 4: Maintenance
-      const maintenanceResult = await this.runPhase4(this.currentFrame, allChanges);
-      
-      // Apply maintainer deltas immediately
-      if (maintenanceResult.deltas && maintenanceResult.deltas.length > 0) {
-        const maintenanceChanges = this.veilState.applyDeltasDirect(maintenanceResult.deltas);
-        allChanges.push(...maintenanceChanges);
-        frame.deltas = [...frame.deltas, ...maintenanceResult.deltas];
-      }
-      
-      // Update transition with all operations
-      if (frame.transition) {
-        frame.transition.veilOps = [...frame.deltas];
+      // Flush buffer to event queue
+      if (this.frameEventBuffer.length > 0) {
+        for (const bufferedEvent of this.frameEventBuffer) {
+          this.queueEvent(bufferedEvent);
+        }
+        this.frameEventBuffer = [];
       }
       
       // Finalize frame
       this.veilState.finalizeFrame(frame, true);
       
-      // Queue all new events for next frame
-      [...newEvents, ...(maintenanceResult.events || [])].forEach(event => this.queueEvent(event));
-      
       // Clean up ephemeral facets
       const ephemeralCleanup = this.veilState.cleanupEphemeralFacets();
-      allChanges.push(...ephemeralCleanup);
+      // cleanupEphemeralFacets returns changes that WERE applied (FacetDelta[])
+      // We just need to add them to the frame delta/change list if we track FacetDeltas?
+      // The current frame structure tracks VEILDelta (instructions), not FacetDelta (outcomes).
+      // But wait, frame also has 'deltas' which are VEILDelta.
+      // ephemeralCleanup are NOT VEILDelta. They are FacetDelta.
+      // So we can't push them to frame.deltas directly.
+      // If we want to record them, we'd need to convert them to VEILDelta or have a separate list.
+      // For now, we ignore recording them in frame.deltas to fix the type error.
+      // (Logic: they are implicitly cleaned up by state manager)
       
       // Notify debug observers
         this.notifyDebugFrameComplete(this.currentFrame, {
           durationMs: performance.now() - frameStartClock,
-          processedEvents: events.length
+          processedEvents: 1 // We processed one event
         });
         
     } finally {
@@ -540,159 +614,11 @@ export class Space {
     }
   }
   
-  /**
-   * Deliver event to subscribed components
-   */
   private async deliverEventToComponents(event: SpaceEvent): Promise<void> {
-    for (const component of this.components) {
-      if (component.enabled && component.isSubscribedTo(event.topic)) {
-        try {
-          await component.handleEvent(event);
-        } catch (error) {
-          console.error(`[Space] Error delivering event ${event.topic} to component ${component.constructor.name}:`, error);
-        }
-      }
-    }
+    // No-op in new architecture - handled in processFrame loop
   }
   
-  /**
-   * PHASE 0: Event preprocessing (Modulators)
-   */
-  private runPhase0(events: SpaceEvent[]): SpaceEvent[] {
-    let processedEvents = events;
-    for (const modulator of this.modulators) {
-      processedEvents = modulator.process(processedEvents);
-    }
-    return processedEvents;
-  }
-  
-  /**
-   * PHASE 1: Events → VEIL Deltas (Receptors)
-   */
-  private runPhase1(events: SpaceEvent[]): VEILDelta[] {
-    const allDeltas: VEILDelta[] = [];
-    
-    for (const event of events) {
-      const receptorsForTopic = this.receptors.get(event.topic) || [];
-      if (receptorsForTopic.length === 0) continue;
-      
-      const receptorGroups = groupByPriority(receptorsForTopic);
-      
-      for (const [priority, receptors] of receptorGroups) {
-        const groupDeltas: VEILDelta[] = [];
-        
-        for (const receptor of receptors) {
-          const newDeltas = receptor.transform(event, this.getReadonlyState());
-          groupDeltas.push(...newDeltas);
-        }
-        
-        if (groupDeltas.length > 0) {
-          this.veilState.applyDeltasDirect(groupDeltas);
-          this.currentFrame!.deltas.push(...groupDeltas);
-          allDeltas.push(...groupDeltas);
-        }
-      }
-    }
-    
-    return allDeltas;
-  }
-  
-  /**
-   * PHASE 2: VEIL → VEIL (Transforms)
-   */
-  private runPhase2(): { deltas: VEILDelta[], changes: FacetDelta[] } {
-    const allDeltas: VEILDelta[] = [];
-    const allChanges: FacetDelta[] = [];
-    const maxIterations = 100;
-    
-    const transformGroups = groupByPriority(this.transforms);
-    
-    for (const [priority, transforms] of transformGroups) {
-      let groupIteration = 0;
-      
-      while (groupIteration < maxIterations) {
-        const groupDeltas: VEILDelta[] = [];
-        
-        for (const transform of transforms) {
-          const newDeltas = transform.process(this.getReadonlyState());
-          groupDeltas.push(...newDeltas);
-        }
-        
-        if (groupDeltas.length === 0) break;
-        
-        const groupChanges = this.veilState.applyDeltasDirect(groupDeltas);
-        this.currentFrame!.deltas.push(...groupDeltas);
-        allDeltas.push(...groupDeltas);
-        allChanges.push(...groupChanges);
-        
-        groupIteration++;
-      }
-      
-      if (groupIteration === maxIterations) {
-        console.warn(`Phase 2 priority group ${priority} exceeded maximum iterations (${maxIterations})`);
-      }
-    }
-    
-    return { deltas: allDeltas, changes: allChanges };
-  }
-  
-  /**
-   * PHASE 3: VEIL changes → Events (Effectors)
-   */
-  private async runPhase3(changes: FacetDelta[]): Promise<SpaceEvent[]> {
-    const allEvents: SpaceEvent[] = [];
-    const effectorGroups = groupByPriority(this.effectors);
-    
-    for (const [priority, effectors] of effectorGroups) {
-      const groupEvents: SpaceEvent[] = [];
-      
-      for (const effector of effectors) {
-        const relevantChanges = changes.filter(change => 
-          this.matchesEffectorFilters(change.facet, effector.facetFilters || [])
-        );
-        if (relevantChanges.length === 0) continue;
-        
-        const result = await effector.process(relevantChanges, this.getReadonlyState());
-        if (result.events) {
-          groupEvents.push(...result.events);
-        }
-      }
-      
-      allEvents.push(...groupEvents);
-    }
-    
-    return allEvents;
-  }
-  
-  /**
-   * PHASE 4: Maintenance
-   */
-  private async runPhase4(frame: Frame, changes: FacetDelta[]): Promise<{ events: SpaceEvent[]; deltas: VEILDelta[] }> {
-    const allEvents: SpaceEvent[] = [];
-    const allDeltas: VEILDelta[] = [];
-    const maintainerGroups = groupByPriority(this.maintainers);
-    
-    for (const [priority, maintainers] of maintainerGroups) {
-      const groupEvents: SpaceEvent[] = [];
-      const groupDeltas: VEILDelta[] = [];
-      
-      for (const maintainer of maintainers) {
-        const result = await maintainer.process(frame, changes, this.getReadonlyState());
-        
-        if (result.events) {
-          groupEvents.push(...result.events);
-        }
-        if (result.deltas) {
-          groupDeltas.push(...result.deltas);
-        }
-      }
-      
-      allDeltas.push(...groupDeltas);
-      allEvents.push(...groupEvents);
-    }
-    
-    return { events: allEvents, deltas: allDeltas };
-  }
+  // Removed Phase methods (runPhase0, runPhase1, etc.)
   
   /**
    * Apply component-state delta with scoped write validation

@@ -3,6 +3,16 @@
  */
 
 import { FrameTransition } from '../persistence/transition-types';
+import type { ReadonlyVEILState, Frame } from '../veil/types';
+
+/**
+ * Execution context passed to components during frame processing
+ */
+export interface ExecutionContext {
+  event: SpaceEvent;
+  state: ReadonlyVEILState;
+  frame: Frame;
+}
 
 /**
  * Element reference that can survive serialization
