@@ -316,10 +316,12 @@ export class Space {
       console.warn('[Space] applyOperation called outside of frame processing');
       return;
     }
-    
+
+    console.log(`[Space.applyOperation] Applying ${operation.type} delta immediately`);
+
     // Apply to VEIL state
     this.veilState.applyDeltasDirect([operation]);
-    
+
     // Record in frame
     this.currentFrame.deltas.push(operation);
   }
@@ -535,31 +537,35 @@ export class Space {
         state: this.getReadonlyState(),
         frame
       };
-      
+
       // Sequential Execution
       // Copy list to allow mutation during iteration (adding components)
       // But if we want "insert after current" to work, we need to be careful.
       // Using index-based iteration on the live list allows appending/inserting.
-      // const executionList = [...this.components]; 
-      
+      // const executionList = [...this.components];
+
       for (let i = 0; i < this.components.length; i++) {
         const component = this.components[i];
         if (!component.enabled) continue;
-        
+
         try {
           // Execute component logic
           component.execute(context);
-          
+
+          // Update context.state after each component so subsequent components
+          // see the latest state including deltas applied by earlier components
+          context.state = this.getReadonlyState();
+
           // Also deliver event to handleEvent (legacy/direct subscription)
           // This maintains compatibility with components using handleEvent
           // but not yet migrated to execute() logic (if any)
           // OR if execute() is the new way, maybe handleEvent is called internally?
-          // Component.execute is no-op by default. 
+          // Component.execute is no-op by default.
           // If we want legacy handleEvent to work, we should call it.
           if (component.isSubscribedTo(event.topic)) {
              await component.handleEvent(event);
           }
-          
+
         } catch (error) {
           console.error(`[Space] Error executing component ${component.constructor.name}:`, error);
         }

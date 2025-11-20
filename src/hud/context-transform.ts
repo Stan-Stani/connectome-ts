@@ -20,10 +20,10 @@ export interface ContextTransformConfig {
 }
 
 export class ContextTransform extends BaseTransform {
-  // Priority: Run after compression (which has priority 10)
-  // TODO [constraint-solver]: Replace with requires = ['compressed-frames']
-  priority = 100;
-  
+  // Priority: Inherits 200 from BaseTransform, which runs after Receptors (100) but before Effectors (300)
+  // This ensures activation facets are visible when rendering context
+  // TODO [constraint-solver]: Replace with requires = ['agent-activation']
+
   private hud: FrameTrackingHUD;
   private compressionEngine?: CompressionEngine;
   private defaultOptions?: Partial<HUDConfig>;
@@ -37,13 +37,13 @@ export class ContextTransform extends BaseTransform {
   
   process(state: ReadonlyVEILState): VEILDelta[] {
     const deltas: VEILDelta[] = [];
-    
-    // console.log(`[ContextTransform] process() called with ${state.facets.size} facets`);
-    
+
+    console.log(`[ContextTransform] process() called with ${state.facets.size} facets`);
+
     // Find activation facets that need context
     for (const [id, facet] of state.facets) {
       if (facet.type === 'agent-activation' && hasStateAspect(facet)) {
-        // console.log(`[ContextTransform] Found agent-activation facet: ${id}`);
+        console.log(`[ContextTransform] Found agent-activation facet: ${id}`);
         const activationState = facet.state as Record<string, any>;
         // Skip if context already rendered for this activation
         const contextExists = Array.from(state.facets.values()).some(f => 
