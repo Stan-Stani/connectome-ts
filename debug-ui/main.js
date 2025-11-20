@@ -698,6 +698,7 @@ const App = {
       frameFacets: [],
       frameFacetsSequence: null,
       elementTree: null,
+      components: [],
       selectedFrameId: null,
       filters: {
         search: ''
@@ -743,7 +744,7 @@ const App = {
         llm: false,
         timeline: false,
         frameDetail: false,
-        elementTree: false,
+        components: false,
         inspector: false
       }
     });
@@ -1016,6 +1017,18 @@ const App = {
         state.elementTree = payload.space || null;
         if (state.elementTree) {
           initializeElementExpansion(state.elementTree);
+        }
+        // Extract components from space
+        if (payload.space?.components && Array.isArray(payload.space.components)) {
+          state.components = payload.space.components.map((c, index) => ({
+            index,
+            id: c.id,
+            name: c.constructor?.name || c.name || 'Unknown',
+            priority: c.priority,
+            enabled: c.enabled
+          }));
+        } else {
+          state.components = [];
         }
         if (payload.metrics) {
           state.metrics = {
@@ -1762,6 +1775,16 @@ const App = {
       };
     }
 
+    function selectComponent(component) {
+      if (!component) return;
+      state.activeDetail = {
+        type: 'component',
+        title: `Component · ${component.name}`,
+        subtitle: `Priority ${component.priority} · ${component.enabled ? 'Enabled' : 'Disabled'}`,
+        data: component
+      };
+    }
+
     function selectOperation(op, idx) {
       state.selectedOperationIndex = idx;
       setDetail({
@@ -2107,6 +2130,7 @@ const App = {
       selectFrame,
       selectOperation,
       selectEvent,
+      selectComponent,
       selectLLMRequest,
       insertActionSnippet,
       onActionSelect,
@@ -2568,39 +2592,44 @@ const App = {
             </div>
           </section>
           <section
-            class="panel element-tree"
-            :class="{ 'panel-collapsed': state.panelCollapsed.elementTree }"
+            class="panel components-panel"
+            :class="{ 'panel-collapsed': state.panelCollapsed.components }"
           >
             <div class="panel-header">
               <div class="panel-header-title">
                 <button
                   class="panel-toggle"
                   type="button"
-                  :aria-expanded="!state.panelCollapsed.elementTree"
-                  :title="state.panelCollapsed.elementTree ? 'Expand panel' : 'Collapse panel'"
-                  @click="togglePanel('elementTree')"
+                  :aria-expanded="!state.panelCollapsed.components"
+                  :title="state.panelCollapsed.components ? 'Expand panel' : 'Collapse panel'"
+                  @click="togglePanel('components')"
                 >
-                  {{ state.panelCollapsed.elementTree ? '▸' : '▾' }}
+                  {{ state.panelCollapsed.components ? '▸' : '▾' }}
                 </button>
-                <h2>Element Tree</h2>
+                <h2>Components</h2>
               </div>
-              <div class="panel-header-actions" v-if="state.elementTree">
-                <button class="button button--small" @click="inspectElementTree" title="Inspect full tree">
-                  🔍
-                </button>
+              <div class="panel-header-actions" v-if="state.components.length">
+                <span class="badge">{{ state.components.length }} components</span>
               </div>
             </div>
-            <div class="element-tree-body" v-show="!state.panelCollapsed.elementTree">
-              <ul v-if="state.elementTree" class="tree-view">
-                <element-tree
-                  :node="state.elementTree"
-                  :depth="0"
-                  :expanded="expandedElements"
-                  @toggle="toggleElement"
-                  @show-detail="handleTreeDetail"
-                />
-              </ul>
-              <div v-else class="text-muted">Tree not available yet.</div>
+            <div class="components-body" v-show="!state.panelCollapsed.components">
+              <div v-if="state.components.length" class="component-list">
+                <div
+                  v-for="component in state.components"
+                  :key="component.id"
+                  class="component-item"
+                  :class="{ disabled: !component.enabled }"
+                  @click="selectComponent(component)"
+                >
+                  <span class="component-index">#{{ component.index }}</span>
+                  <span class="component-name">{{ component.name }}</span>
+                  <span class="component-priority" :title="'Priority: ' + component.priority">
+                    {{ component.priority }}
+                  </span>
+                  <span class="component-status" v-if="!component.enabled">⏸</span>
+                </div>
+              </div>
+              <div v-else class="text-muted" style="padding: 12px;">No components registered.</div>
             </div>
           </section>
         </section>

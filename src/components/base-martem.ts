@@ -164,30 +164,11 @@ export abstract class BaseEffector extends Component implements Effector {
   
   async execute(context: ExecutionContext): Promise<void> {
     console.warn(`[Deprecation] ${this.constructor.name} is an Effector. Convert to Component.`);
-    
-    // Derive changes from frame deltas
-    const changes: FacetDelta[] = [];
-    if (context.frame && context.frame.deltas) {
-        for (const op of context.frame.deltas) {
-            if (op.type === 'addFacet') {
-                changes.push({ type: 'added', facet: op.facet });
-            } else if (op.type === 'rewriteFacet') {
-                // We don't have old facet easily here without deeper lookup or tracking
-                // Approximating
-                const facet = context.state.facets.get(op.id);
-                if (facet) {
-                     changes.push({ type: 'changed', facet: facet, oldFacet: facet }); // Approximation
-                }
-            } else if (op.type === 'removeFacet') {
-                // Removed facet might be gone from state if applied immediately
-                // But maintainer logic is complex. 
-                // For now, we skip removed or try to look up?
-                // changes.push({ type: 'removed', facet: ... });
-            }
-        }
-    }
 
-    if (changes.length === 0) return;
+    // Legacy effectors expect FacetDelta[] for changes, but in FLEX we don't track
+    // deltas at the component level. For compatibility, pass empty changes array.
+    // If effectors need actual change tracking, they should be migrated to modern Components.
+    const changes: FacetDelta[] = [];
 
     const result = await this.process(changes, context.state);
     if (result && result.events) {
@@ -233,14 +214,29 @@ export abstract class BaseMaintainer extends Component implements Maintainer {
   
   async execute(context: ExecutionContext): Promise<void> {
     console.warn(`[Deprecation] ${this.constructor.name} is a Maintainer. Convert to Component.`);
-    
-    // Similar approximation for changes
-    const changes: FacetDelta[] = []; 
-    // ... (Reuse logic if I can, or just pass empty for now to unblock)
-    // Proper implementation requires tracking deltas applied THIS frame.
-    
-    const result = await this.process(context.frame, changes, context.state);
-    
+
+    // Legacy maintainers expect a Frame object, but in FLEX components don't have
+    // direct frame access. Create a minimal frame structure from available context.
+    const frame: Frame = {
+      sequence: context.sequence,
+      timestamp: context.timestamp,
+      events: [context.event],
+      deltas: [],
+      transition: {
+        sequence: context.sequence,
+        timestamp: context.timestamp,
+        elementOps: [],
+        componentOps: [],
+        componentChanges: [],
+        veilOps: [],
+        extensions: {}
+      }
+    };
+
+    const changes: FacetDelta[] = [];
+
+    const result = await this.process(frame, changes, context.state);
+
     if (result.events) {
       for (const event of result.events) {
         this.emit(event);

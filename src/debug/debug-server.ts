@@ -791,8 +791,11 @@ export class DebugServer {
           id: this.space.id,
           name: this.space.name,
           components: components.map(c => ({
-            type: c.constructor.name,
+            constructor: { name: c.constructor.name },
+            name: c.constructor.name,
             id: c.id || 'unknown',
+            priority: (c as any).priority ?? 0,
+            enabled: (c as any).enabled ?? true,
             ...getMartemMetadata(c, this.space)
           })),
           componentCount: components.length,

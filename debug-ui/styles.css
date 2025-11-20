@@ -685,11 +685,18 @@ body {
   justify-content: flex-end;
 }
 
-.frame-detail-body,
-.element-tree-body {
+.frame-detail-body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.components-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  max-height: 100%;
 }
 
 .inspector-content {
@@ -817,6 +824,74 @@ body {
 .frame-duration {
   color: var(--text-muted);
   font-size: 0.68rem;
+}
+
+/* Component List Styles */
+.component-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  padding-right: 2px;
+  min-height: 0;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 4px;
+}
+
+.component-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  font-size: 0.72rem;
+  transition: background 0.1s ease;
+  cursor: pointer;
+}
+
+.component-item:hover {
+  background: rgba(56, 189, 248, 0.05);
+}
+
+.component-item:last-child {
+  border-bottom: none;
+}
+
+.component-item.disabled {
+  opacity: 0.5;
+}
+
+.component-index {
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-width: 32px;
+  font-size: 0.68rem;
+}
+
+.component-name {
+  flex: 1;
+  color: var(--text-primary);
+  font-family: 'Courier New', monospace;
+  font-size: 0.72rem;
+}
+
+.component-priority {
+  font-size: 0.68rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.25);
+  min-width: 40px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.component-status {
+  font-size: 0.85rem;
+  color: var(--text-muted);
 }
 
 .pill {
