@@ -420,7 +420,7 @@ export class ConnectomeDebugMCP {
    */
   async getAgents(): Promise<any[]> {
     const state = await this.getState();
-    
+
     // Extract agents from VEIL state
     const agents: any[] = [];
     if (state.veil?.agents) {
@@ -428,10 +428,31 @@ export class ConnectomeDebugMCP {
         agents.push({ id, ...(agent as any) });
       }
     }
-    
+
     return agents;
   }
-  
+
+  /**
+   * Get component list with priorities and execution order
+   * @tool
+   */
+  async getComponents(): Promise<any[]> {
+    const state = await this.getState();
+
+    // Extract components from space
+    if (!state.space?.components || !Array.isArray(state.space.components)) {
+      return [];
+    }
+
+    return state.space.components.map((c: any, index: number) => ({
+      index,
+      id: c.id,
+      name: c.constructor?.name || c.name || 'Unknown',
+      priority: c.priority,
+      enabled: c.enabled
+    }));
+  }
+
   /**
    * Get debug LLM status and requests
    * @tool

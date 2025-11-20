@@ -10,12 +10,24 @@ import { DebugServer } from './debug-server';
 import { BasicAgent } from '../agent/basic-agent';
 import * as inspector from 'inspector';
 
+interface ComponentInfo {
+  id: string;
+  name: string;
+  priority: number;
+  enabled: boolean;
+  type?: string;  // Constructor name
+}
+
 interface DebugRegistry {
   host?: ConnectomeHost;
   space?: Space;
   veilState?: VEILStateManager;
   debugServer?: DebugServer;
   agents?: Map<string, BasicAgent>;
+
+  // Helper methods
+  getComponents?: () => ComponentInfo[];
+  getComponentsByPriority?: () => Map<number, ComponentInfo[]>;
 }
 
 const registry: DebugRegistry = {};
@@ -70,7 +82,43 @@ export function registerDebugSpace(space: Space): void {
   initRegistry();
   registry.space = space;
   registry.veilState = space.getVEILStateManager();
+
+  // Add helper methods for component inspection
+  registry.getComponents = (): ComponentInfo[] => {
+    if (!registry.space) return [];
+    return registry.space.components.map(c => ({
+      id: c.id,
+      name: c.constructor.name,
+      priority: c.priority,
+      enabled: c.enabled,
+      type: c.constructor.name
+    }));
+  };
+
+  registry.getComponentsByPriority = (): Map<number, ComponentInfo[]> => {
+    const byPriority = new Map<number, ComponentInfo[]>();
+    if (!registry.space) return byPriority;
+
+    for (const c of registry.space.components) {
+      const info: ComponentInfo = {
+        id: c.id,
+        name: c.constructor.name,
+        priority: c.priority,
+        enabled: c.enabled,
+        type: c.constructor.name
+      };
+
+      if (!byPriority.has(c.priority)) {
+        byPriority.set(c.priority, []);
+      }
+      byPriority.get(c.priority)!.push(info);
+    }
+
+    return byPriority;
+  };
+
   console.log('   ✓ Space and VEILState registered');
+  console.log(`   ✓ Component inspection helpers added (${space.components.length} components)`);
 }
 
 export function registerDebugServer(debugServer: DebugServer): void {
