@@ -11,7 +11,16 @@ import type { ReadonlyVEILState, Frame } from '../veil/types';
 export interface ExecutionContext {
   event: SpaceEvent;
   state: ReadonlyVEILState;
-  frame: Frame;
+  // Flattened metadata
+  sequence: number;
+  timestamp: string;
+  
+  /**
+   * Mutable buffer of OUTGOING events emitted during this frame.
+   * Components can inspect, modify, or cancel events emitted by earlier components
+   * before they are flushed to the main queue.
+   */
+  bufferedEvents: SpaceEvent[];
 }
 
 /**

@@ -535,7 +535,9 @@ export class Space {
       const context = {
         event,
         state: this.getReadonlyState(),
-        frame
+        sequence: frame.sequence,
+        timestamp: frame.timestamp,
+        bufferedEvents: this.frameEventBuffer
       };
 
       // Sequential Execution
