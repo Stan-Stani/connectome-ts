@@ -96,11 +96,12 @@ interface ExecutionContext {
   // Inputs (Immutable)
   readonly event: SpaceEvent;         // The trigger (e.g., "user.message")
   readonly state: ReadonlyVEILState;  // LIVE world model (includes earlier changes)
-  
+
   // Metadata (Immutable)
   readonly sequence: number;          // Frame sequence ID
   readonly timestamp: string;         // Frame timestamp
-  
+  readonly frame: ReadonlyFrame;      // Read-only view of current frame
+
   // Control Surface (Mutable)
   /**
    * Buffer of OUTGOING events emitted during this frame.
@@ -114,6 +115,8 @@ interface ExecutionContext {
 **Critical Feature 1**: The `state` is refreshed after every component execution. If Component A (priority 100) creates a facet, Component B (priority 200) sees it immediately in the same frame.
 
 **Critical Feature 2**: The `bufferedEvents` array is mutable. High-priority components (e.g., filters or modulators running late in the chain) can inspect and remove events emitted by earlier components, effectively canceling their future consequences.
+
+**Critical Feature 3**: The `frame` provides readonly access to the current frame being processed. Components can inspect `frame.deltas` to see what operations were queued this frame, but cannot mutate the frame. This is primarily for backward compatibility with MARTEM-style effectors that need to detect specific facet additions.
 
 ### Outputs: Side Effects
 
@@ -251,11 +254,16 @@ Each frame follows this precise sequence:
 ```typescript
 const event = eventQueue.shift();
 const frame = {
-  id: generateId(),
-  timestamp: Date.now(),
-  event,
-  operations: []
+  sequence: getNextSequence(),
+  timestamp: new Date().toISOString(),
+  uuid: generateUUID(),
+  events: [event],
+  deltas: [],
+  transition: createDefaultTransition()
 };
+
+// Frame is passed to components as ReadonlyFrame in ExecutionContext
+// Components can inspect frame.deltas but cannot mutate the frame
 ```
 
 ### 2. Component Execution Loop
@@ -349,6 +357,12 @@ class ModernComponent extends Component {
       // Emit new events for future frames
       this.emit({ topic: 'processing.complete' });
     }
+
+    // Optional: Inspect frame.deltas to detect specific operations
+    // frame is ReadonlyFrame - you can read but not mutate
+    // const hasActivation = frame.deltas.some(d =>
+    //   d.type === 'addFacet' && d.facet.type === 'agent-activation'
+    // );
   }
 
   onMount(): void {
@@ -839,6 +853,8 @@ ENABLE_TRACING=true npm run test:phase0
 ### Core Implementation
 - `src/spaces/space.ts:471` - Main `processFrame()` implementation
 - `src/spaces/component.ts` - Component base class
+- `src/spaces/types.ts:11` - ExecutionContext interface with readonly frame
+- `src/veil/types.ts:88` - Frame and ReadonlyFrame types
 - `src/components/base-martem.ts` - Backward compatibility shims
 
 ### Documentation
@@ -854,6 +870,6 @@ ENABLE_TRACING=true npm run test:phase0
 
 ---
 
-**Document Version:** 2.0
-**Architecture Version:** FLEX Phase 3
+**Document Version:** 2.1
+**Architecture Version:** FLEX Phase 3 (with ReadonlyFrame)
 **Last Updated:** 2025-11-20
