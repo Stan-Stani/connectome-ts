@@ -852,7 +852,7 @@ export class DebugServer {
     });
 
     this.app.put('/api/elements/:id/props', (req, res) => {
-      // Phase 1 compatibility: map element ID to component ID
+      // Legacy compatibility: map element ID to component ID
       const id = req.params.id;
       const comp = this.space.getComponentById(id);
       

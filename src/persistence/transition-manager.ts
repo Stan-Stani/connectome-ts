@@ -368,7 +368,7 @@ export class TransitionManager {
       await restoreVEILState(this.veilState, snapshot.veilState);
     }
     
-    // Phase 2: Restore Space components
+    // Restore Space components
     if (snapshot.elementTree) {
       // We reuse elementTree field name for now but it contains SerializedSpace
       await restoreSpace(this.space, snapshot.elementTree);
@@ -383,7 +383,7 @@ export class TransitionManager {
   private async applyTransition(node: TransitionNode) {
     const transition = node.transition;
     
-    // Phase 1 compatibility: Apply element operations (shimmed to component operations)
+    // Legacy compatibility: Apply element operations (shimmed to component operations)
     for (const op of transition.elementOps) {
       await this.applyElementOperation(op);
     }
@@ -415,11 +415,11 @@ export class TransitionManager {
   }
   
   /**
-   * Phase 1 compatibility: Apply an element operation (shimmed to component operations)
+   * Legacy compatibility: Apply an element operation (shimmed to component operations)
    */
   private async applyElementOperation(op: ElementOperation) {
-    // Element tree operations are shimmed to equivalent component operations in Phase 2
-    console.warn(`[TransitionManager] Ignoring Phase 1 element operation: ${op.type}`);
+    // Element tree operations are shimmed to equivalent component operations
+    console.warn(`[TransitionManager] Ignoring legacy element operation: ${op.type}`);
   }
   
   /**
@@ -428,7 +428,7 @@ export class TransitionManager {
   private async applyComponentOperation(op: ComponentOperation) {
     switch (op.type) {
       case 'add-component':
-        // In Phase 2, all components are on Space
+        // All components are mounted directly on Space
         const component = ComponentRegistry.create(op.componentClass);
         if (component) {
           // Restore initial state if provided

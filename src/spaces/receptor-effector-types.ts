@@ -101,11 +101,11 @@ export interface AfferentError {
 }
 
 /**
- * Receptor: Phase 1 - Converts events into VEIL deltas
+ * Receptor: Converts events into VEIL deltas
  * MUST be stateless - same input always produces same output
  * Can add facets, rewrite existing facets (e.g., offline edits), or remove facets
- * 
- * TIMING: Returned deltas are applied IMMEDIATELY before Phase 2 begins
+ *
+ * TIMING: Returned deltas are applied immediately before Transform execution
  */
 export interface Receptor extends Component {
   /** 
@@ -125,11 +125,11 @@ export interface Receptor extends Component {
 }
 
 /**
- * Transform: Phase 2 - Transforms VEIL state
+ * Transform: Transforms VEIL state
  * Used for derived state, cleanup, indexes, etc.
  * Can add, change, or remove facets - just like Receptors
- * 
- * TIMING: Phase 2 runs iteratively. Each transform's deltas are applied
+ *
+ * TIMING: Transform execution is iterative. Each transform's deltas are applied
  * IMMEDIATELY, visible to subsequent iterations. Stops when no deltas produced.
  * 
  * Execution Order:
@@ -156,9 +156,9 @@ export interface Transform extends Component {
   /** Optional filters to limit which facets trigger this transform */
   facetFilters?: FacetFilter[];
   
-  /** 
+  /**
    * Process current state to produce VEIL operations
-   * NOTE: May be called multiple times per frame due to Phase 2 iteration
+   * NOTE: May be called multiple times per frame due to iterative execution
    * IMPORTANT: Deltas applied immediately - design transforms to be idempotent
    */
   process(state: ReadonlyVEILState): VEILDelta[];

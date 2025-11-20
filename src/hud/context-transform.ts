@@ -2,7 +2,7 @@
  * ContextTransform - A Transform that renders context for agent activations
  * 
  * This is the new architecture version of FrameTrackingHUD.
- * It runs during Phase 2 of frame processing and creates ephemeral
+ * It runs during frame processing and creates ephemeral
  * rendered-context facets for any pending agent activations.
  */
 
@@ -79,7 +79,7 @@ export class ContextTransform extends BaseTransform {
         const fullState = veilStateManager.getState();
         
         // Get current frame from Space to include in rendering
-        // This is critical: during Phase 2, the current frame hasn't been finalized
+        // This is critical: during execution, the current frame hasn't been finalized
         // to frameHistory yet, so we need to explicitly include it
         const currentFrame = space?.getCurrentFrame();
         

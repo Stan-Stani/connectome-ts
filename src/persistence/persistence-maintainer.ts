@@ -21,7 +21,7 @@ export class PersistenceMaintainer extends BaseMaintainer {
   private storage: FileStorageAdapter;
   private lastSnapshotSequence: number = 0;
 
-  // FLEX Phase 1: Renamed from 'space' to avoid conflict with Component.space getter
+  // Named 'rootSpace' to avoid conflict with Component.space getter
   private rootSpace: Space;
   private veilState: VEILStateManager;
   private config: PersistenceMaintainerConfig;

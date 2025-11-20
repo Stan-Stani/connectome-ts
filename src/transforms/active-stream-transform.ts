@@ -13,7 +13,7 @@ import { ReadonlyVEILState } from '../spaces/receptor-effector-types';
 import { VEILDelta } from '../veil/types';
 
 export class ActiveStreamTransform extends BaseTransform {
-  // Priority: Early in Phase 2, before rendering (ContextTransform is 100)
+  // Priority: Early in execution, before rendering (ContextTransform is 100)
   priority = 50;
   
   process(state: ReadonlyVEILState): VEILDelta[] {

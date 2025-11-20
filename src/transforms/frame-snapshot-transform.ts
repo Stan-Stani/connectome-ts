@@ -2,7 +2,7 @@
  * FrameSnapshotTransform
  * 
  * Captures rendered snapshots of frames at creation time.
- * Runs late in Phase 2 (after state stabilizes) to capture the frame's
+ * Runs late in execution (after state stabilizes) to capture the frame's
  * final rendered appearance with facet attribution.
  * 
  * This preserves the original subjective experience for compression,
@@ -33,7 +33,7 @@ export interface FrameSnapshotTransformOptions {
 }
 
 export class FrameSnapshotTransform extends BaseTransform {
-  // Run late in Phase 2, after other transforms have stabilized state
+  // Run late in execution, after other transforms have stabilized state
   // TODO [constraint-solver]: Replace with provides = ['frame-snapshots']
   priority = 200;
   

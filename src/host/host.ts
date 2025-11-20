@@ -302,7 +302,7 @@ export class ConnectomeHost {
       }
     }
     
-    // Phase 1 compatibility: Reconstruct components from element-tree facets in VEIL
+    // Legacy compatibility: Reconstruct components from element-tree facets in VEIL
     await this.reconstructComponentsFromVEIL(space, veilState);
     
     // Exit restoration mode
@@ -360,7 +360,7 @@ export class ConnectomeHost {
     // Import ComponentManager dynamically
     const { ComponentManager } = await import('../spaces/component-manager');
 
-    console.log('✨ FLEX Phase 2: Component architecture active');
+    console.log('✨ Connectome host initialized with flat component architecture');
 
     // Mount ComponentManager directly
     const componentManager = new ComponentManager();
@@ -506,7 +506,7 @@ export class ConnectomeHost {
   }
   
   /**
-   * Phase 1 compatibility: Reconstruct components from element-tree facets in VEIL
+   * Legacy compatibility: Reconstruct components from element-tree facets in VEIL
    */
   private async reconstructComponentsFromVEIL(space: Space, veilState: VEILStateManager): Promise<void> {
     const state = veilState.getState();

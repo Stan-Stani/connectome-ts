@@ -528,7 +528,6 @@ export class BasicAgent implements AgentInterface {
     if (!this._autoActionRegistration) return;
     
     // Look for components with declared actions
-    // In Phase 2 architecture, the parameter is a Component that may declare actions
     const componentClass = element.constructor as any;
     const declaredActions = componentClass.actions;
     

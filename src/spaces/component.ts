@@ -312,8 +312,8 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
     
     const veilState = (this.space as any).getVEILState().getState();
     const componentId = this.getComponentId();
-    // Phase 1 used "component-state:elementId:Type:Index"
-    // Now we just use "component-state:componentId"
+    // Legacy format was "component-state:elementId:Type:Index"
+    // Now simplified to "component-state:componentId"
     const stateFacet = veilState.facets.get(`component-state:${componentId}`);
     
     return (stateFacet?.state || {}) as T;
@@ -321,34 +321,25 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
 
   /**
    * Update this component's state in VEIL
-   * 
-   * For VEILComponents (Phase 1/2): Uses addOperation() - applies via normal flow
-   * For Effectors/Maintainers (Phase 3/4): Directly modifies VEIL (side effect!) via Space hook
-   * For Afferents: Must emit event, use runtime cache
-   * 
+   *
+   * Uses addOperation() which applies deltas immediately during execution.
+   * Works for all component types (Receptors, Transforms, Effectors, Maintainers).
+   *
+   * Note: Afferents should emit events instead of directly modifying state.
+   *
    * @param updates - Partial state updates (deep merged)
    */
   protected updateComponentState(updates: Record<string, any>): void {
     const componentId = this.getComponentId();
     const currentState = this.getComponentState();
-    
-    const delta = {
-      type: 'rewriteFacet' as const,
+
+    this.addOperation({
+      type: 'rewriteFacet',
       id: `component-state:${componentId}`,
       changes: {
         state: { ...currentState, ...updates }
       }
-    };
-    
-    // Try to apply as scoped write (for Effectors/Maintainers in their phase)
-    const space = this.space as any;
-    if (space && space._applyComponentStateDelta) {
-      // Direct application during Phase 3/4
-      space._applyComponentStateDelta(delta, componentId);
-    } else {
-      // Fallback to normal addOperation (for VEILComponents)
-      this.addOperation(delta);
-    }
+    });
   }
 
   /**

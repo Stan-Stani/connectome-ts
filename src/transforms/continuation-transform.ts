@@ -51,7 +51,7 @@ export class ContinuationTransform extends BaseTransform implements Transform {
             }
           }
           
-          // Remove the continuation:complete facet so it's not processed again in Phase 2 loop
+          // Remove the continuation:complete facet so it's not processed again
           deltas.push({
             type: 'removeFacet',
             id

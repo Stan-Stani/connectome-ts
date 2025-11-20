@@ -118,7 +118,7 @@ export class VEILStateManager {
   
   /**
    * Apply deltas directly to state without creating a frame
-   * Used for Phase 2 iterations where changes should be immediately visible
+   * Used during component execution where changes should be immediately visible
    * but we don't want to create intermediate frames in history
    */
   applyDeltasDirect(deltas: VEILOperation[]): FacetDelta[] {
@@ -491,8 +491,8 @@ export class VEILStateManager {
       };
     }
     
-    // Allow querying currentSequence + 1 (for in-progress frames during Phase 2)
-    // In this case, we return current state (frame hasn't been finalized yet)
+    // Allow querying currentSequence + 1 (for in-progress frames)
+    // Return current state since the frame hasn't been finalized yet
     if (targetSequence === this.state.currentSequence + 1) {
       return {
         sequence: targetSequence,
@@ -835,11 +835,10 @@ export class VEILStateManager {
       throw new Error(`Cannot delete ${count} frames, only ${this.state.frameHistory.length} exist`);
     }
     
-    // Phase 1: Analyze and categorize components
+    // Analyze and categorize components
     const { invariant, stateful } = this.categorizeComponents(space);
-    
-    // Phase 2: Prepare deletion
-    // Sort frames by sequence to ensure we delete the most recent ones
+
+    // Prepare deletion - sort frames by sequence to ensure we delete the most recent ones
     const sortedFrames = [...this.state.frameHistory].sort((a, b) => b.sequence - a.sequence);
     const framesToDelete = sortedFrames.slice(0, count);
     const deletedRange = {

@@ -1,7 +1,7 @@
 /**
  * StateTransitionTransform - Automatically generates event facets for state changes
  * 
- * This transform runs in Phase 2 and detects state changes, using renderers
+ * This transform runs during execution and detects state changes, using renderers
  * attached to state facets to create human-readable event descriptions.
  */
 
