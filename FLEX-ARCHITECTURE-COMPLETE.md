@@ -89,17 +89,31 @@ abstract class Component {
 
 ### Inputs: ExecutionContext
 
-Every component receives an immutable context representing the exact moment of execution:
+Every component receives a context object representing the exact moment of execution:
 
 ```typescript
 interface ExecutionContext {
-  event: SpaceEvent;         // The trigger (e.g., "user.message")
-  state: ReadonlyVEILState;  // LIVE world model (includes earlier changes)
-  frame: Frame;              // Metadata (timestamp, sequence ID)
+  // Inputs (Immutable)
+  readonly event: SpaceEvent;         // The trigger (e.g., "user.message")
+  readonly state: ReadonlyVEILState;  // LIVE world model (includes earlier changes)
+  
+  // Metadata (Immutable)
+  readonly sequence: number;          // Frame sequence ID
+  readonly timestamp: string;         // Frame timestamp
+  
+  // Control Surface (Mutable)
+  /**
+   * Buffer of OUTGOING events emitted during this frame.
+   * Components can inspect, modify, or cancel events emitted by earlier components
+   * before they are flushed to the main queue.
+   */
+  bufferedEvents: SpaceEvent[];
 }
 ```
 
-**Critical Feature**: The `state` is refreshed after every component execution. If Component A (priority 100) creates a facet, Component B (priority 200) sees it immediately in the same frame.
+**Critical Feature 1**: The `state` is refreshed after every component execution. If Component A (priority 100) creates a facet, Component B (priority 200) sees it immediately in the same frame.
+
+**Critical Feature 2**: The `bufferedEvents` array is mutable. High-priority components (e.g., filters or modulators running late in the chain) can inspect and remove events emitted by earlier components, effectively canceling their future consequences.
 
 ### Outputs: Side Effects
 
@@ -129,7 +143,15 @@ FLEX processes one event per frame through a single, linear execution pipeline:
 // Simplified frame processing
 async processFrame() {
   const event = eventQueue.shift();        // One event per frame
-  const context = { event, state, frame };
+  
+  // Prepare context with mutable event buffer
+  const context = { 
+    event, 
+    state: this.getReadonlyState(),
+    sequence: frame.sequence,
+    timestamp: frame.timestamp,
+    bufferedEvents: this.frameEventBuffer
+  };
 
   // Sequential execution through priority-ordered components
   for (const component of this.components) {
@@ -145,7 +167,7 @@ async processFrame() {
   // Cleanup and prepare for next frame
   finalizeFrame();
   cleanupEphemeralFacets();
-  flushBufferedEvents();
+  flushBufferedEvents(); // Pushes bufferedEvents to main queue
 }
 ```
 
@@ -378,16 +400,14 @@ execute(context) {
 }
 ```
 
-### Deprecation Control
+### Deprecation Warnings
 
-Control warnings with environment variable:
-```bash
-# Silence deprecation warnings
-FLEX_DEPRECATION_WARNINGS=false npm start
-
-# Show all warnings (default)
-FLEX_DEPRECATION_WARNINGS=true npm start
+The base MARTEM classes (`BaseReceptor`, `BaseTransform`, etc.) emit deprecation warnings to encourage migration:
 ```
+[Deprecation] MyReceptor is a Receptor. Convert to Component.
+```
+
+Note: These warnings are currently always shown and cannot be disabled via environment variable.
 
 ---
 
@@ -652,7 +672,7 @@ View traces in `./traces/trace-YYYY-MM-DD.json` files.
 ### Current Issues
 
 1. **Deprecation Warnings**: Expected in legacy code using MARTEM patterns
-   - Resolution: Gradual migration or set `FLEX_DEPRECATION_WARNINGS=false`
+   - Resolution: Gradual migration to modern Component API
 
 2. **Test Coverage**: Some refactor branch tests not wired to npm scripts
    - Workaround: Run directly with `ts-node examples/test-*.ts`
@@ -709,7 +729,7 @@ export class MyComponent extends Component {
 
   // Main execution method
   execute(context: ExecutionContext): void {
-    const { event, state, frame } = context;
+    const { event, state, bufferedEvents } = context;
 
     // Filter events if needed
     if (event.topic !== 'my.topic') return;
