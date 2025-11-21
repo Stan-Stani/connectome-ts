@@ -126,6 +126,11 @@ export class Space {
   // Callbacks to run on next frame
   private nextFrameCallbacks: (() => void)[] = [];
 
+  /**
+   * Runtime flag to enable detailed component execution tracing
+   */
+  public enableComponentTracing: boolean = false;
+
   constructor(veilState: VEILStateManager, hostRegistry?: Map<string, any>, lifecycleId?: string, spaceId?: string) {
     this.id = spaceId || 'root';
     this.veilState = veilState;
@@ -141,6 +146,13 @@ export class Space {
     this.addComponent(veilOpReceptor);
   }
   
+  /**
+   * Enable/disable component execution tracing
+   */
+  toggleComponentTracing(enabled: boolean): void {
+    this.enableComponentTracing = enabled;
+  }
+
   /**
    * Get VEILStateManager - public accessor for components
    */
@@ -506,7 +518,8 @@ export class Space {
       this.currentFrame = frame;
       
       this.notifyDebugFrameStart(this.currentFrame, {
-        queuedEvents: this.eventQueue.length
+        queuedEvents: this.eventQueue.length,
+        components: this.getComponentSnapshots()
       });
       
       // Drain event queue - Take ONE event
@@ -538,9 +551,23 @@ export class Space {
       // Index-based iteration allows components to be added during execution
       // Components can insert after current position using addComponent options
 
+      const componentExecutions: import('../debug/types').ComponentExecutionRecord[] = [];
+      const trackingEnabled = this.enableComponentTracing;
+
       for (let i = 0; i < this.components.length; i++) {
         const component = this.components[i];
         if (!component.enabled) continue;
+
+        let startDeltaCount = 0;
+        let startEventBufferCount = 0;
+        let startTime = 0;
+        let error: string | undefined;
+
+        if (trackingEnabled) {
+           startDeltaCount = frame.deltas.length;
+           startEventBufferCount = this.frameEventBuffer.length;
+           startTime = performance.now();
+        }
 
         try {
           // Execute component logic
@@ -560,8 +587,21 @@ export class Space {
              await component.handleEvent(event);
           }
 
-        } catch (error) {
-          console.error(`[Space] Error executing component ${component.constructor.name}:`, error);
+        } catch (err: any) {
+          console.error(`[Space] Error executing component ${component.constructor.name}:`, err);
+          error = err.message || String(err);
+        } finally {
+           if (trackingEnabled) {
+              componentExecutions.push({
+                componentId: component.id || 'unknown',
+                componentName: component.constructor.name,
+                durationMs: performance.now() - startTime,
+                deltaStartIndex: startDeltaCount,
+                deltaEndIndex: frame.deltas.length,
+                emittedEvents: this.frameEventBuffer.length - startEventBufferCount,
+                error
+              });
+           }
         }
       }
       
@@ -588,7 +628,8 @@ export class Space {
       // Notify debug observers
         this.notifyDebugFrameComplete(this.currentFrame, {
           durationMs: performance.now() - frameStartClock,
-          processedEvents: 1 // We processed one event
+          processedEvents: 1, // We processed one event
+          componentExecutions: trackingEnabled ? componentExecutions : undefined
         });
         
     } finally {
@@ -722,6 +763,15 @@ export class Space {
    */
   listReferences(): string[] {
     return Array.from(this.hostRegistry.keys());
+  }
+
+  private getComponentSnapshots(): import('../debug/types').DebugComponentSnapshot[] {
+    return this.components.map(c => ({
+      id: c.id || 'unknown',
+      name: c.constructor.name,
+      priority: c.priority,
+      enabled: c.enabled
+    }));
   }
 
   private notifyDebugFrameStart(frame: Frame, context: DebugFrameStartContext): void {

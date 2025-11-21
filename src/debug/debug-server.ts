@@ -11,7 +11,7 @@ import { VEILStateManager } from '../veil/veil-state';
 import type { Frame, Facet, StreamRef, StreamInfo } from '../veil/types';
 import { hasContentAspect } from '../veil/types';
 import type { SpaceEvent, ElementRef } from '../spaces/types';
-import type { DebugObserver, DebugFrameStartContext, DebugFrameCompleteContext, DebugEventContext, DebugAgentFrameContext } from './types';
+import type { DebugObserver, DebugFrameStartContext, DebugFrameCompleteContext, DebugEventContext, DebugAgentFrameContext, DebugComponentSnapshot, ComponentExecutionRecord } from './types';
 import { deterministicUUID } from '../utils/uuid';
 import type { Component } from '../spaces/component';
 import type { RenderedContext } from '../hud/types-v2';
@@ -57,6 +57,8 @@ interface DebugFrameRecord {
   kind: 'incoming' | 'outgoing';
   deltas: any[];
   events: DebugEventRecord[];
+  components?: DebugComponentSnapshot[];
+  executions?: ComponentExecutionRecord[];
   queueLength?: number;
   durationMs?: number;
   processedEvents?: number;
@@ -181,6 +183,7 @@ class DebugStateTracker extends EventEmitter implements DebugObserver {
       kind: inferFrameKind(frame, 'incoming'),
       events: [],
       deltas: [],
+      components: context.components,
       queueLength: context.queuedEvents,
       activeStream: frame.activeStream
     };
@@ -216,6 +219,7 @@ class DebugStateTracker extends EventEmitter implements DebugObserver {
     record.deltas = frame.deltas.map(op => sanitizePayload(op));
     record.durationMs = context.durationMs;
     record.processedEvents = context.processedEvents;
+    record.executions = context.componentExecutions;
     record.activeStream = frame.activeStream;
     record.events = sanitizeFrameEvents(frame, record.uuid);
     record.kind = inferFrameKind(frame, record.kind);
@@ -801,7 +805,8 @@ export class DebugServer {
           space: spaceInfo,
           veil: serializeVEILState(this.veilState.getState()),
           metrics: this.tracker.getMetrics(),
-          manualLLMEnabled: this.debugLLMEnabled
+          manualLLMEnabled: this.debugLLMEnabled,
+          tracingEnabled: this.space.enableComponentTracing
         });
       } catch (error: any) {
         console.error('[DebugServer] Error serializing state:', error);
@@ -916,6 +921,16 @@ export class DebugServer {
       }
 
       res.json({ status: 'ok', request });
+    });
+
+    this.app.post('/api/config/tracing', (req, res) => {
+      const { enabled } = req.body || {};
+      if (typeof enabled !== 'boolean') {
+        res.status(400).json({ error: 'enabled must be a boolean' });
+        return;
+      }
+      this.space.toggleComponentTracing(enabled);
+      res.json({ enabled: this.space.enableComponentTracing });
     });
 
     this.app.get('/api/metrics', (_req, res) => {

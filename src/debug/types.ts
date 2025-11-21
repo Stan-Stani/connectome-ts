@@ -2,13 +2,33 @@ import type { Frame, StreamRef } from '../veil/types';
 import type { SpaceEvent, EventPhase } from '../spaces/types';
 import type { RenderedContext } from '../hud/types-v2';
 
+export interface DebugComponentSnapshot {
+  id: string;
+  name: string;
+  priority: number;
+  enabled: boolean;
+  state?: Record<string, any>;
+}
+
+export interface ComponentExecutionRecord {
+  componentId: string;
+  componentName: string;
+  durationMs: number;
+  deltaStartIndex: number;
+  deltaEndIndex: number;
+  emittedEvents: number;
+  error?: string;
+}
+
 export interface DebugFrameStartContext {
   queuedEvents: number;
+  components?: DebugComponentSnapshot[];
 }
 
 export interface DebugFrameCompleteContext {
   durationMs: number;
   processedEvents: number;
+  componentExecutions?: ComponentExecutionRecord[];
 }
 
 export interface DebugAgentFrameContext {
