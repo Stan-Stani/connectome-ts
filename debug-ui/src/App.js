@@ -156,14 +156,25 @@ export const App = {
     });
 
     const componentList = computed(() => {
+      // If a frame is selected but has no component snapshot, return empty array
+      // This will show "no data" message instead of falling back to current state
+      if (selectedFrame.value && !selectedFrame.value.components) {
+        return [];
+      }
+      // If frame has components, use historical snapshot
       if (selectedFrame.value && selectedFrame.value.components) {
         return selectedFrame.value.components;
       }
+      // No frame selected, use current live state
       return state.components;
     });
 
     const isHistoricalComponents = computed(() => {
       return !!(selectedFrame.value && selectedFrame.value.components);
+    });
+
+    const componentsUnavailable = computed(() => {
+      return selectedFrame.value && !selectedFrame.value.components;
     });
 
     // Methods
@@ -646,7 +657,8 @@ export const App = {
       },
       toggleTracing: () => api.setTracingEnabled(!state.tracingEnabled),
       componentList,
-      isHistoricalComponents
+      isHistoricalComponents,
+      componentsUnavailable
     };
   },
   template: `
@@ -1120,15 +1132,20 @@ export const App = {
                 </button>
                 <h2>Components</h2>
                 <span v-if="isHistoricalComponents" class="badge" title="Historical snapshot from frame" style="margin-left: 8px;">📸</span>
+                <span v-if="componentsUnavailable" class="badge" title="Component data not captured for this frame" style="margin-left: 8px; background: rgba(231, 76, 60, 0.2); color: #e74c3c;">⚠️ No Data</span>
               </div>
               <div class="panel-header-actions" v-if="componentList.length">
                 <span class="badge">{{ componentList.length }} components</span>
               </div>
             </div>
             <div class="components-body" v-show="!state.panelCollapsed.components">
-              <component-list 
-                :components="componentList" 
-                @select="selectComponent" 
+              <div v-if="componentsUnavailable" class="text-muted" style="padding: 16px;">
+                Component snapshot not available for this frame. Component data was not captured when this frame was created.
+              </div>
+              <component-list
+                v-else
+                :components="componentList"
+                @select="selectComponent"
               />
             </div>
           </section>
