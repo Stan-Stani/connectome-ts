@@ -177,6 +177,38 @@ export const App = {
       return selectedFrame.value && !selectedFrame.value.components;
     });
 
+    const componentOperations = computed(() => {
+      if (!selectedFrame.value) return [];
+
+      const frame = selectedFrame.value;
+      const executions = frame.executions || [];
+      const deltas = frame.deltas || [];
+
+      // If no executions, show all deltas as ungrouped
+      if (executions.length === 0) {
+        return [{
+          componentName: 'All Components',
+          componentId: 'all',
+          operations: deltas,
+          deltaCount: deltas.length
+        }];
+      }
+
+      // Group deltas by component execution
+      return executions.map(exec => {
+        const componentDeltas = deltas.slice(exec.deltaStartIndex, exec.deltaEndIndex);
+        return {
+          componentName: exec.componentName,
+          componentId: exec.componentId,
+          operations: componentDeltas,
+          deltaCount: componentDeltas.length,
+          durationMs: exec.durationMs,
+          emittedEvents: exec.emittedEvents,
+          error: exec.error
+        };
+      });
+    });
+
     // Methods
     function setDetail(detail) {
       state.activeDetail = detail;
@@ -658,7 +690,8 @@ export const App = {
       toggleTracing: () => api.setTracingEnabled(!state.tracingEnabled),
       componentList,
       isHistoricalComponents,
-      componentsUnavailable
+      componentsUnavailable,
+      componentOperations
     };
   },
   template: `
@@ -1050,40 +1083,56 @@ export const App = {
                 <div class="section">
                   <h3>Operations</h3>
                   <div class="log-viewer operations">
-                    <div v-if="!selectedFrame.deltas?.length" class="text-muted">No operations.</div>
-                    <template v-for="(op, idx) in selectedFrame.deltas" :key="idx">
-                      <div v-if="op.type === 'addFacet' && op.facet" class="log-entry facet-entry">
-                        <div class="facet-header" @click="selectOperation(op, idx)">
-                          <span class="log-type">{{ op.type }}</span>
-                          <span class="log-meta" v-if="operationMeta(op)">{{ operationMeta(op) }}</span>
+                    <div v-if="componentOperations.length === 0" class="text-muted">No operations.</div>
+                    <template v-for="(compOps, compIdx) in componentOperations" :key="compIdx">
+                      <div class="component-ops-group">
+                        <div class="component-ops-header">
+                          <span class="component-name">{{ compOps.componentName }}</span>
+                          <span class="component-stats">
+                            <span v-if="compOps.deltaCount > 0" class="stat">{{ compOps.deltaCount }} ops</span>
+                            <span v-if="compOps.durationMs !== undefined" class="stat">{{ compOps.durationMs.toFixed(1) }}ms</span>
+                            <span v-if="compOps.emittedEvents > 0" class="stat">{{ compOps.emittedEvents }} events</span>
+                            <span v-if="compOps.error" class="stat error">ERROR</span>
+                          </span>
                         </div>
-                        <inline-facet-tree
-                          :facet="op.facet"
-                          :depth="0"
-                          @show-detail="handleTreeDetail"
-                        />
-                      </div>
-                      <div v-else class="log-entry" @click="selectOperation(op, idx)">
-                        <span class="log-type">{{ op.type }}</span>
-                        <span class="log-content">
-                          <template v-if="op.type === 'speak'">
-                            <span class="log-speak">{{ truncate(op.content, 120) }}</span>
-                            <span class="log-meta" v-if="op.target"> → {{ op.target }}</span>
-                          </template>
-                          <template v-else-if="op.type === 'changeState'">
-                            <span v-if="op.updates?.content" class="log-state">content: {{ truncate(op.updates.content, 80) }}</span>
-                            <span v-else-if="op.updates?.attributes" class="log-state">
-                              {{ Object.keys(op.updates.attributes).join(', ') }}
+                        <template v-if="compOps.deltaCount === 0">
+                          <div class="text-muted" style="padding: 8px 16px; font-size: 0.9em;">(no operations)</div>
+                        </template>
+                        <template v-else v-for="(op, idx) in compOps.operations" :key="idx">
+                          <div v-if="op.type === 'addFacet' && op.facet" class="log-entry facet-entry">
+                            <div class="facet-header" @click="selectOperation(op, idx)">
+                              <span class="log-type">{{ op.type }}</span>
+                              <span class="log-meta" v-if="operationMeta(op)">{{ operationMeta(op) }}</span>
+                            </div>
+                            <inline-facet-tree
+                              :facet="op.facet"
+                              :depth="0"
+                              @show-detail="handleTreeDetail"
+                            />
+                          </div>
+                          <div v-else class="log-entry" @click="selectOperation(op, idx)">
+                            <span class="log-type">{{ op.type }}</span>
+                            <span class="log-content">
+                              <template v-if="op.type === 'speak'">
+                                <span class="log-speak">{{ truncate(op.content, 120) }}</span>
+                                <span class="log-meta" v-if="op.target"> → {{ op.target }}</span>
+                              </template>
+                              <template v-else-if="op.type === 'changeState'">
+                                <span v-if="op.updates?.content" class="log-state">content: {{ truncate(op.updates.content, 80) }}</span>
+                                <span v-else-if="op.updates?.attributes" class="log-state">
+                                  {{ Object.keys(op.updates.attributes).join(', ') }}
+                                </span>
+                              </template>
+                              <template v-else-if="op.type === 'action'">
+                                <span class="log-action">{{ (op.path || []).join('.') }}</span>
+                              </template>
+                              <template v-else>
+                                <span class="log-raw">{{ truncate(stringify(op), 100) }}</span>
+                              </template>
                             </span>
-                          </template>
-                          <template v-else-if="op.type === 'action'">
-                            <span class="log-action">{{ (op.path || []).join('.') }}</span>
-                          </template>
-                          <template v-else>
-                            <span class="log-raw">{{ truncate(stringify(op), 100) }}</span>
-                          </template>
-                        </span>
-                        <span class="log-meta" v-if="operationMeta(op)">{{ operationMeta(op) }}</span>
+                            <span class="log-meta" v-if="operationMeta(op)">{{ operationMeta(op) }}</span>
+                          </div>
+                        </template>
                       </div>
                     </template>
                   </div>

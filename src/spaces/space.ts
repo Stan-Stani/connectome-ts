@@ -128,8 +128,9 @@ export class Space {
 
   /**
    * Runtime flag to enable detailed component execution tracing
+   * Enabled by default to provide per-component delta attribution
    */
-  public enableComponentTracing: boolean = false;
+  public enableComponentTracing: boolean = true;
 
   constructor(veilState: VEILStateManager, hostRegistry?: Map<string, any>, lifecycleId?: string, spaceId?: string) {
     this.id = spaceId || 'root';

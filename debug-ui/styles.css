@@ -1156,6 +1156,52 @@ body {
   padding-top: 1px;
 }
 
+/* Component operation groups */
+.component-ops-group {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.component-ops-group:last-child {
+  border-bottom: none;
+}
+
+.component-ops-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(56, 189, 248, 0.08);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.component-name {
+  font-weight: 600;
+  color: var(--accent);
+  font-size: 0.8rem;
+}
+
+.component-stats {
+  display: flex;
+  gap: 12px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.component-stats .stat {
+  padding: 2px 6px;
+  background: rgba(148, 163, 184, 0.1);
+  border-radius: 3px;
+}
+
+.component-stats .stat.error {
+  color: #e74c3c;
+  background: rgba(231, 76, 60, 0.15);
+  font-weight: 600;
+}
+
 .log-meta {
   font-size: 0.68rem;
   color: var(--text-muted);
