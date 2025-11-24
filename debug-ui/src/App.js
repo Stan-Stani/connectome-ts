@@ -1,34 +1,31 @@
 import { computed, onMounted, onBeforeUnmount, watch, nextTick, ref } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
 import { state } from './store.js';
 import * as api from './api.js';
-import { 
-  formatTime, 
-  formatTimestamp, 
-  shorten, 
-  truncate, 
-  formatComponents, 
-  formatChildren, 
-  summarizeFacet, 
-  summarizeOperation, 
-  summarizeEvent, 
-  operationMeta, 
-  eventMeta, 
-  stringify, 
-  extractActionSnippets, 
-  getTurnLabel 
+import {
+  formatTime,
+  formatTimestamp,
+  shorten,
+  truncate,
+  formatChildren,
+  summarizeFacet,
+  summarizeOperation,
+  summarizeEvent,
+  operationMeta,
+  eventMeta,
+  stringify,
+  extractActionSnippets,
+  getTurnLabel
 } from './utils.js';
 import { JsonViewer } from './components/JsonViewer.js';
 import { FacetTree, InlineFacetTree } from './components/FacetTree.js';
 import { ElementTree } from './components/ElementTree.js';
-import { ComponentList } from './components/ComponentList.js';
 
 export const App = {
   components: {
     JsonViewer,
     FacetTree,
     InlineFacetTree,
-    ElementTree,
-    ComponentList
+    ElementTree
   },
   setup() {
     const layoutRef = ref(null);
@@ -155,34 +152,13 @@ export const App = {
       return state.frames.slice(0, state.deleteCount);
     });
 
-    const componentList = computed(() => {
-      // If a frame is selected but has no component snapshot, return empty array
-      // This will show "no data" message instead of falling back to current state
-      if (selectedFrame.value && !selectedFrame.value.components) {
-        return [];
-      }
-      // If frame has components, use historical snapshot
-      if (selectedFrame.value && selectedFrame.value.components) {
-        return selectedFrame.value.components;
-      }
-      // No frame selected, use current live state
-      return state.components;
-    });
-
-    const isHistoricalComponents = computed(() => {
-      return !!(selectedFrame.value && selectedFrame.value.components);
-    });
-
-    const componentsUnavailable = computed(() => {
-      return selectedFrame.value && !selectedFrame.value.components;
-    });
-
     const componentOperations = computed(() => {
       if (!selectedFrame.value) return [];
 
       const frame = selectedFrame.value;
       const executions = frame.executions || [];
       const deltas = frame.deltas || [];
+      const components = frame.components || [];
 
       // If no executions, show all deltas as ungrouped
       if (executions.length === 0) {
@@ -197,6 +173,10 @@ export const App = {
       // Group deltas by component execution
       return executions.map(exec => {
         const componentDeltas = deltas.slice(exec.deltaStartIndex, exec.deltaEndIndex);
+
+        // Find matching component snapshot for full details
+        const componentSnapshot = components.find(c => c.id === exec.componentId);
+
         return {
           componentName: exec.componentName,
           componentId: exec.componentId,
@@ -206,7 +186,8 @@ export const App = {
           emittedEvents: exec.emittedEvents,
           error: exec.error,
           context: exec.context,
-          emittedEventDetails: exec.emittedEventDetails
+          emittedEventDetails: exec.emittedEventDetails,
+          componentSnapshot: componentSnapshot
         };
       });
     });
@@ -276,6 +257,11 @@ export const App = {
         subtitle: `Priority ${component.priority} · ${component.enabled ? 'Enabled' : 'Disabled'}`,
         data: component
       };
+    }
+
+    function inspectComponent(componentSnapshot) {
+      if (!componentSnapshot) return;
+      selectComponent(componentSnapshot);
     }
 
     function selectOperation(op, idx) {
@@ -636,7 +622,6 @@ export const App = {
       formatTimestamp,
       shorten,
       truncate,
-      formatComponents,
       formatChildren,
       summarizeFacet,
       summarizeOperation,
@@ -654,6 +639,7 @@ export const App = {
       selectOperation,
       selectEvent,
       selectComponent,
+      inspectComponent,
       selectLLMRequest: api.selectLLMRequest,
       insertActionSnippet,
       onActionSelect,
@@ -707,9 +693,6 @@ export const App = {
         closeInjectDialog();
       },
       toggleTracing: () => api.setTracingEnabled(!state.tracingEnabled),
-      componentList,
-      isHistoricalComponents,
-      componentsUnavailable,
       componentOperations,
       expandedComponents,
       toggleComponentDetail,
@@ -1076,40 +1059,14 @@ export const App = {
                     <json-viewer :data="selectedFrame.renderedContext" :expandAll="state.jsonExpandAll" />
                   </div>
                 </div>
-                <div class="section" v-if="selectedFrame.executions && selectedFrame.executions.length">
-                  <h3>Execution Trace</h3>
-                  <div class="section-body execution-trace">
-                    <div 
-                      v-for="exec in selectedFrame.executions" 
-                      :key="exec.componentId"
-                      class="trace-item"
-                      style="padding: 4px 8px; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center;"
-                    >
-                      <div class="trace-header" style="display: flex; gap: 8px; align-items: center;">
-                        <span class="trace-name" style="font-weight: 500;">{{ exec.componentName }}</span>
-                        <span class="trace-duration text-muted" style="font-size: 0.85em;">{{ exec.durationMs.toFixed(1) }}ms</span>
-                      </div>
-                      <div class="trace-details" style="display: flex; gap: 4px;">
-                        <span class="badge" v-if="exec.deltaEndIndex > exec.deltaStartIndex" style="background: rgba(52, 152, 219, 0.2); color: #3498db;">
-                          {{ exec.deltaEndIndex - exec.deltaStartIndex }} ops
-                        </span>
-                        <span class="badge" v-if="exec.emittedEvents > 0" style="background: rgba(46, 204, 113, 0.2); color: #2ecc71;">
-                          {{ exec.emittedEvents }} ev
-                        </span>
-                        <span class="badge error" v-if="exec.error" style="background: rgba(231, 76, 60, 0.2); color: #e74c3c;">Error</span>
-                      </div>
-                      <div v-if="exec.error" class="trace-error" style="width: 100%; color: #e74c3c; font-size: 0.85em; margin-top: 4px;">{{ exec.error }}</div>
-                    </div>
-                  </div>
-                </div>
                 <div class="section">
-                  <h3>Operations</h3>
+                  <h3>Component Executions & Operations</h3>
                   <div class="log-viewer operations">
                     <div v-if="componentOperations.length === 0" class="text-muted">No operations.</div>
                     <template v-for="(compOps, compIdx) in componentOperations" :key="compIdx">
                       <div class="component-ops-group">
-                        <div class="component-ops-header" @click="toggleComponentDetail(compOps.componentId)" style="cursor: pointer;">
-                          <span class="component-name">
+                        <div class="component-ops-header" style="display: flex; align-items: center; cursor: pointer;">
+                          <span class="component-name" @click="toggleComponentDetail(compOps.componentId)" style="flex: 1;">
                             <span class="expand-icon">{{ isComponentDetailExpanded(compOps.componentId) ? '▼' : '▶' }}</span>
                             {{ compOps.componentName }}
                           </span>
@@ -1118,6 +1075,12 @@ export const App = {
                             <span v-if="compOps.durationMs !== undefined" class="stat">{{ compOps.durationMs.toFixed(1) }}ms</span>
                             <span v-if="compOps.emittedEvents > 0" class="stat">{{ compOps.emittedEvents }} events</span>
                             <span v-if="compOps.error" class="stat error">ERROR</span>
+                            <button
+                              v-if="compOps.componentSnapshot"
+                              @click.stop="inspectComponent(compOps.componentSnapshot)"
+                              class="component-inspect-btn"
+                              title="Inspect component details"
+                            >🔍</button>
                           </span>
                         </div>
 
@@ -1224,40 +1187,6 @@ export const App = {
               <div v-else class="section-body text-muted">
                 Select a frame from the left to inspect operations and rendered context.
               </div>
-            </div>
-          </section>
-          <section
-            class="panel components-panel"
-            :class="{ 'panel-collapsed': state.panelCollapsed.components }"
-          >
-            <div class="panel-header">
-              <div class="panel-header-title">
-                <button
-                  class="panel-toggle"
-                  type="button"
-                  :aria-expanded="!state.panelCollapsed.components"
-                  :title="state.panelCollapsed.components ? 'Expand panel' : 'Collapse panel'"
-                  @click="togglePanel('components')"
-                >
-                  {{ state.panelCollapsed.components ? '▸' : '▾' }}
-                </button>
-                <h2>Components</h2>
-                <span v-if="isHistoricalComponents" class="badge" title="Historical snapshot from frame" style="margin-left: 8px;">📸</span>
-                <span v-if="componentsUnavailable" class="badge" title="Component data not captured for this frame" style="margin-left: 8px; background: rgba(231, 76, 60, 0.2); color: #e74c3c;">⚠️ No Data</span>
-              </div>
-              <div class="panel-header-actions" v-if="componentList.length">
-                <span class="badge">{{ componentList.length }} components</span>
-              </div>
-            </div>
-            <div class="components-body" v-show="!state.panelCollapsed.components">
-              <div v-if="componentsUnavailable" class="text-muted" style="padding: 16px;">
-                Component snapshot not available for this frame. Component data was not captured when this frame was created.
-              </div>
-              <component-list
-                v-else
-                :components="componentList"
-                @select="selectComponent"
-              />
             </div>
           </section>
         </section>
