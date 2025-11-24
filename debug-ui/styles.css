@@ -1305,6 +1305,32 @@ body {
   overflow-y: auto;
 }
 
+.buffer-event-item {
+  margin-bottom: 4px;
+  padding: 4px 6px;
+  background: rgba(241, 196, 15, 0.08);
+  border-radius: 3px;
+  border-left: 2px solid rgba(241, 196, 15, 0.4);
+  font-size: 0.7rem;
+}
+
+.buffer-event-item strong {
+  color: var(--text-primary);
+  font-size: 0.68rem;
+  margin-left: 4px;
+}
+
+.buffer-event-item pre {
+  margin: 4px 0 0 14px;
+  padding: 4px 6px;
+  background: rgba(15, 23, 42, 0.4);
+  border-radius: 3px;
+  font-size: 0.65rem;
+  overflow-x: auto;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
 .error-section {
   padding: 8px;
   background: rgba(231, 76, 60, 0.1);

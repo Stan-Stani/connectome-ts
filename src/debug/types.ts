@@ -30,6 +30,12 @@ export interface ComponentExecutionRecord {
       facetCount: number;
       sequence: number;
     };
+    eventBufferSnapshot?: Array<{
+      topic: string;
+      source?: any;
+      target?: any;
+      payload?: any;
+    }>;
   };
 
   // Events emitted by this component (optional)

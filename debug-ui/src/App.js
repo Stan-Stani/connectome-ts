@@ -1096,6 +1096,16 @@ export const App = {
                             <div class="context-item" v-if="compOps.context.stateSnapshot">
                               <strong>State:</strong> {{ compOps.context.stateSnapshot.facetCount }} facets at sequence {{ compOps.context.stateSnapshot.sequence }}
                             </div>
+                            <div class="context-item" v-if="compOps.context.eventBufferSnapshot">
+                              <strong>Event Buffer:</strong> {{ compOps.context.eventBufferSnapshot.length }} queued events
+                              <div v-if="compOps.context.eventBufferSnapshot.length > 0" style="margin-top: 4px;">
+                                <div v-for="(bufEvt, bufIdx) in compOps.context.eventBufferSnapshot" :key="bufIdx" class="buffer-event-item">
+                                  <span style="font-size: 0.68rem; color: var(--text-muted);">{{ bufIdx + 1 }}.</span>
+                                  <strong>{{ bufEvt.topic }}</strong>
+                                  <pre v-if="bufEvt.payload">{{ JSON.stringify(bufEvt.payload, null, 2) }}</pre>
+                                </div>
+                              </div>
+                            </div>
                           </div>
 
                           <!-- Emitted Events -->

@@ -581,13 +581,19 @@ export class Space {
              stateSnapshot: {
                facetCount: context.state.facets.size,
                sequence: context.state.currentSequence
-             }
+             },
+             eventBufferSnapshot: this.frameEventBuffer.map(evt => ({
+               topic: evt.topic,
+               source: evt.source,
+               target: evt.target,
+               payload: evt.payload
+             }))
            };
         }
 
         try {
-          // Execute component logic
-          component.execute(context);
+          // Execute component logic (await to capture async emissions)
+          await component.execute(context);
 
           // Update context.state after each component so subsequent components
           // see the latest state including deltas applied by earlier components
