@@ -6,95 +6,119 @@ import { Space } from './space';
 import { join, dirname } from 'path';
 import { writeFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
+import { ComponentStateFacet } from '../veil/facet-types';
 
 /**
- * ComponentManager: Handles dynamic component creation and lifecycle
- * Replaces ElementTreeMaintainer for the flattened architecture
+ * ComponentManager: Instantiates components from component-state facets
+ *
+ * Priority: 400 (Maintainer phase)
+ *
+ * VEIL-first component instantiation:
+ * 1. ComponentStateReceptor (priority 100) creates component-state facets
+ * 2. ComponentManager (priority 400) reads facets and instantiates components
+ * 3. Components are added to Space and initialized
+ *
+ * This maintains VEIL as the single source of truth for component lifecycle.
+ * Both fresh starts and restoration work the same way: read facets, create components.
  */
 export class ComponentManager extends BaseMaintainer {
-  
+  // Track which component-state facets we've already instantiated
+  private instantiatedComponents = new Set<string>();
+
   async process(frame: Frame, changes: import('../spaces/receptor-effector-types').FacetDelta[], state: ReadonlyVEILState): Promise<MaintainerResult> {
     const events: SpaceEvent[] = [];
-    
+
+    // Find all component-state facets that need instantiation
+    for (const [facetId, facet] of state.facets) {
+      if (facet.type === 'component-state' && !this.instantiatedComponents.has(facetId)) {
+        await this.instantiateComponent(facet as ComponentStateFacet, events);
+      }
+    }
+
+    // Handle component removal events
     if (frame.events) {
       for (const event of frame.events) {
-        if (event.topic === 'component:add') {
-          await this.handleComponentAdd(event);
-        } else if (event.topic === 'component:remove') {
+        if (event.topic === 'component:remove') {
           this.handleComponentRemove(event);
         }
       }
     }
-    
+
     return { events };
   }
-  
-  private async handleComponentAdd(event: SpaceEvent): Promise<void> {
-    const payload = event.payload as any;
-    const componentType = payload.componentType || payload.type;
-    const config = payload.config;
-    
-    // Generate ID: prefer componentId, fallback to elementId:Type (legacy shim), fallback to auto-generated
-    let componentId = payload.componentId;
-    if (!componentId && payload.elementId) {
-      // Legacy shim: if elementId is provided (e.g. 'discord'), use it as prefix or ID
-      // For singletons like 'discord', we might want just 'discord' or 'discord:Afferent'
-      // Let's try to be smart: if elementId looks like a specific instance ID, use it
-      if (payload.elementId !== 'root') {
-         componentId = `${payload.elementId}:${componentType}`;
+
+  /**
+   * Instantiate a component from its component-state facet
+   */
+  private async instantiateComponent(facet: ComponentStateFacet, events: SpaceEvent[]): Promise<void> {
+    const { componentId, componentType, state: config } = facet;
+    const facetId = `component-state:${componentId}`;
+
+    console.log(`[ComponentManager] Instantiating component ${componentType} (${componentId}) from facet`);
+
+    // Check if component already exists in Space (idempotency)
+    const existing = this.space.getComponentById(componentId);
+    if (existing) {
+      console.log(`[ComponentManager] Component already exists in Space: ${componentId}`);
+      this.instantiatedComponents.add(facetId);
+      return;
+    }
+
+    // AXON loading logic
+    const axonMetadata = (config as any)?._axonMetadata;
+    if (axonMetadata?.moduleUrl && !ComponentRegistry.has(componentType)) {
+      try {
+        await this.loadAndRegisterAxonComponent(componentType, axonMetadata);
+      } catch (error) {
+        console.error(`[ComponentManager] Failed to load AXON component ${componentType}:`, error);
+        return;
       }
     }
 
-    if (!componentType) return;
-    
-    console.log(`[ComponentManager] Processing component:add for ${componentType}`);
-    
-    // AXON loading logic
-    const axonMetadata = config?._axonMetadata;
-    if (axonMetadata?.moduleUrl && !ComponentRegistry.has(componentType)) {
-       await this.loadAndRegisterAxonComponent(componentType, axonMetadata);
-    }
-
-    // Check registry again after potential loading
+    // Get component class from registry
     let ComponentClass = ComponentRegistry.getConstructor(componentType);
-    
+
     if (!ComponentClass) {
       // Try to create from registry (it might have create method)
       try {
         const instance = ComponentRegistry.create(componentType);
         if (instance) {
-            ComponentClass = instance.constructor as any;
+          ComponentClass = instance.constructor as any;
         }
       } catch (e) {}
     }
 
     if (!ComponentClass && !ComponentRegistry.create(componentType)) {
       console.error(`[ComponentManager] Unknown component type: ${componentType}`);
+      this.instantiatedComponents.add(facetId); // Mark as processed to avoid retries
       return;
     }
-    
+
     try {
-      // Use ComponentRegistry.create to handle potential factory logic if any, or just new Class()
+      // Create component instance
       const component = ComponentRegistry.create(componentType) || new (ComponentClass as any)();
-      
-      // Apply config
-      if (config) {
+
+      // Apply config from facet state
+      if (config && typeof config === 'object') {
         Object.assign(component, config);
-        
+
         // Handle AXON afferents with setConnectionParams
         if (axonMetadata && 'setConnectionParams' in component && typeof (component as any).setConnectionParams === 'function') {
-             // Async init - catch errors
-             (component as any).setConnectionParams(config).catch((err: any) => {
-               console.error(`[ComponentManager] Error configuring ${componentType}:`, err);
-             });
+          // Async init - catch errors
+          (component as any).setConnectionParams(config).catch((err: any) => {
+            console.error(`[ComponentManager] Error configuring ${componentType}:`, err);
+          });
         }
       }
-      
+
       // Add to space
       this.space.addComponent(component, componentId);
-      
+
+      // Mark as instantiated
+      this.instantiatedComponents.add(facetId);
+
       // Emit component:mounted event
-      this.space.emit({
+      events.push({
         topic: 'component:mounted',
         source: this.space.getRef(),
         payload: {
@@ -105,8 +129,11 @@ export class ComponentManager extends BaseMaintainer {
         timestamp: Date.now()
       });
 
+      console.log(`[ComponentManager] Component instantiated: ${componentType} (${componentId})`);
+
     } catch (error) {
-      console.error(`[ComponentManager] Failed to create component ${componentType}:`, error);
+      console.error(`[ComponentManager] Failed to instantiate component ${componentType}:`, error);
+      this.instantiatedComponents.add(facetId); // Mark as processed to avoid infinite retries
     }
   }
   

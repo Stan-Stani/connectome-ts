@@ -302,13 +302,14 @@ export class ConnectomeHost {
       }
     }
     
-    // Legacy compatibility: Reconstruct components from element-tree facets in VEIL
-    await this.reconstructComponentsFromVEIL(space, veilState);
-    
+    // VEIL-first restoration: Components automatically instantiated from component-state facets
+    // ComponentManager (priority 400) will read facets and create components during first frame
+    // No manual reconstruction needed - VEIL is the single source of truth!
+
     // Exit restoration mode
     space.setRestorationMode(false);
-    
-    console.log('✅ All components restored and mounted');
+
+    console.log('✅ VEIL state restored - components will be instantiated from facets');
     
     // Now resolve all references and external resources
     await this.resolveAllReferences(space);
@@ -357,16 +358,21 @@ export class ConnectomeHost {
    * Initialize core Component infrastructure
    */
   private async initializeComponentInfrastructure(space: Space): Promise<void> {
-    // Import ComponentManager dynamically
+    // Import component lifecycle managers
+    const { ComponentStateReceptor } = await import('../spaces/component-state-receptor');
     const { ComponentManager } = await import('../spaces/component-manager');
 
-    console.log('✨ Connectome host initialized with flat component architecture');
+    console.log('✨ Connectome host initialized with VEIL-first component architecture');
 
-    // Mount ComponentManager directly
+    // Mount ComponentStateReceptor (priority 100) - converts events to facets
+    const componentStateReceptor = new ComponentStateReceptor();
+    space.addComponent(componentStateReceptor, 'infrastructure:ComponentStateReceptor');
+
+    // Mount ComponentManager (priority 400) - instantiates from facets
     const componentManager = new ComponentManager();
     space.addComponent(componentManager, 'infrastructure:ComponentManager');
 
-    console.log('🔧 Component infrastructure initialized');
+    console.log('🔧 Component infrastructure initialized (VEIL-first)');
   }
 
   /**
