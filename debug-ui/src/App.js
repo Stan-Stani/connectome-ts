@@ -204,7 +204,9 @@ export const App = {
           deltaCount: componentDeltas.length,
           durationMs: exec.durationMs,
           emittedEvents: exec.emittedEvents,
-          error: exec.error
+          error: exec.error,
+          context: exec.context,
+          emittedEventDetails: exec.emittedEventDetails
         };
       });
     });
@@ -604,6 +606,23 @@ export const App = {
       '--frame-panel-height': `${state.framePanelHeight}px`
     }));
 
+    // Component execution detail expansion state
+    const expandedComponents = ref(new Set());
+
+    function toggleComponentDetail(componentId) {
+      if (expandedComponents.value.has(componentId)) {
+        expandedComponents.value.delete(componentId);
+      } else {
+        expandedComponents.value.add(componentId);
+      }
+      // Trigger reactivity
+      expandedComponents.value = new Set(expandedComponents.value);
+    }
+
+    function isComponentDetailExpanded(componentId) {
+      return expandedComponents.value.has(componentId);
+    }
+
     return {
       state,
       filteredFrames,
@@ -691,7 +710,10 @@ export const App = {
       componentList,
       isHistoricalComponents,
       componentsUnavailable,
-      componentOperations
+      componentOperations,
+      expandedComponents,
+      toggleComponentDetail,
+      isComponentDetailExpanded
     };
   },
   template: `
@@ -1086,8 +1108,11 @@ export const App = {
                     <div v-if="componentOperations.length === 0" class="text-muted">No operations.</div>
                     <template v-for="(compOps, compIdx) in componentOperations" :key="compIdx">
                       <div class="component-ops-group">
-                        <div class="component-ops-header">
-                          <span class="component-name">{{ compOps.componentName }}</span>
+                        <div class="component-ops-header" @click="toggleComponentDetail(compOps.componentId)" style="cursor: pointer;">
+                          <span class="component-name">
+                            <span class="expand-icon">{{ isComponentDetailExpanded(compOps.componentId) ? '▼' : '▶' }}</span>
+                            {{ compOps.componentName }}
+                          </span>
                           <span class="component-stats">
                             <span v-if="compOps.deltaCount > 0" class="stat">{{ compOps.deltaCount }} ops</span>
                             <span v-if="compOps.durationMs !== undefined" class="stat">{{ compOps.durationMs.toFixed(1) }}ms</span>
@@ -1095,6 +1120,43 @@ export const App = {
                             <span v-if="compOps.error" class="stat error">ERROR</span>
                           </span>
                         </div>
+
+                        <!-- Detailed execution info (expandable) -->
+                        <div v-if="isComponentDetailExpanded(compOps.componentId)" class="component-execution-detail">
+                          <!-- Input Context -->
+                          <div v-if="compOps.context" class="execution-section">
+                            <h4>Input Context</h4>
+                            <div class="context-item" v-if="compOps.context.inputEvent">
+                              <strong>Event:</strong> {{ compOps.context.inputEvent.topic }}
+                              <pre v-if="compOps.context.inputEvent.payload">{{ JSON.stringify(compOps.context.inputEvent.payload, null, 2) }}</pre>
+                            </div>
+                            <div class="context-item" v-if="compOps.context.stateSnapshot">
+                              <strong>State:</strong> {{ compOps.context.stateSnapshot.facetCount }} facets at sequence {{ compOps.context.stateSnapshot.sequence }}
+                            </div>
+                          </div>
+
+                          <!-- Emitted Events -->
+                          <div v-if="compOps.emittedEventDetails && compOps.emittedEventDetails.length > 0" class="execution-section">
+                            <h4>Emitted Events ({{ compOps.emittedEventDetails.length }})</h4>
+                            <div v-for="(evt, evtIdx) in compOps.emittedEventDetails" :key="evtIdx" class="emitted-event-item">
+                              <strong>{{ evt.topic }}</strong>
+                              <pre v-if="evt.payload">{{ JSON.stringify(evt.payload, null, 2) }}</pre>
+                            </div>
+                          </div>
+
+                          <!-- Operations Summary -->
+                          <div v-if="compOps.deltaCount > 0" class="execution-section">
+                            <h4>Operations ({{ compOps.deltaCount }})</h4>
+                            <div class="text-muted">See below for detailed operations</div>
+                          </div>
+
+                          <!-- Error Details -->
+                          <div v-if="compOps.error" class="execution-section error-section">
+                            <h4>Error</h4>
+                            <pre>{{ compOps.error }}</pre>
+                          </div>
+                        </div>
+
                         <template v-if="compOps.deltaCount === 0">
                           <div class="text-muted" style="padding: 8px 16px; font-size: 0.9em;">(no operations)</div>
                         </template>

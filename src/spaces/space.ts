@@ -563,11 +563,26 @@ export class Space {
         let startEventBufferCount = 0;
         let startTime = 0;
         let error: string | undefined;
+        let contextSnapshot: any;
+        let emittedEventDetails: any[] | undefined;
 
         if (trackingEnabled) {
            startDeltaCount = frame.deltas.length;
            startEventBufferCount = this.frameEventBuffer.length;
            startTime = performance.now();
+
+           // Capture input context for detailed inspection
+           contextSnapshot = {
+             inputEvent: {
+               topic: context.event.topic,
+               source: context.event.source,
+               payload: context.event.payload
+             },
+             stateSnapshot: {
+               facetCount: context.state.facets.size,
+               sequence: context.state.currentSequence
+             }
+           };
         }
 
         try {
@@ -593,14 +608,27 @@ export class Space {
           error = err.message || String(err);
         } finally {
            if (trackingEnabled) {
+              // Capture events emitted by this component
+              const newEventCount = this.frameEventBuffer.length - startEventBufferCount;
+              if (newEventCount > 0) {
+                emittedEventDetails = this.frameEventBuffer.slice(startEventBufferCount).map(evt => ({
+                  topic: evt.topic,
+                  source: evt.source,
+                  target: evt.target,
+                  payload: evt.payload
+                }));
+              }
+
               componentExecutions.push({
                 componentId: component.id || 'unknown',
                 componentName: component.constructor.name,
                 durationMs: performance.now() - startTime,
                 deltaStartIndex: startDeltaCount,
                 deltaEndIndex: frame.deltas.length,
-                emittedEvents: this.frameEventBuffer.length - startEventBufferCount,
-                error
+                emittedEvents: newEventCount,
+                error,
+                context: contextSnapshot,
+                emittedEventDetails
               });
            }
         }

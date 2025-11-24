@@ -18,6 +18,27 @@ export interface ComponentExecutionRecord {
   deltaEndIndex: number;
   emittedEvents: number;
   error?: string;
+
+  // Detailed execution context (optional, for detailed inspection)
+  context?: {
+    inputEvent?: {
+      topic: string;
+      source?: any;
+      payload?: any;
+    };
+    stateSnapshot?: {
+      facetCount: number;
+      sequence: number;
+    };
+  };
+
+  // Events emitted by this component (optional)
+  emittedEventDetails?: Array<{
+    topic: string;
+    source?: any;
+    target?: any;
+    payload?: any;
+  }>;
 }
 
 export interface DebugFrameStartContext {
