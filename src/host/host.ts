@@ -179,15 +179,11 @@ export class ConnectomeHost {
       (space as any).persistence = persistenceMaintainer;
     }
 
-    // Start debug server if enabled
-    if (this.config.debug?.enabled) {
-      const port = this.config.debug.port || 3015;
-      this.debugServer = new DebugServer(space, { port });
-      registerDebugServer(this.debugServer);
-      await this.debugServer.start();
-      console.log(`🔍 Debug UI available at http://localhost:${port}`);
+    // Debug server already started in createFresh() if enabled
+    if (this.debugServer) {
+      console.log(`🔍 Debug UI available at http://localhost:${this.config.debug?.port || 3015}`);
     }
-    
+
     // Set up dynamic component handler
     this.setupDynamicComponentHandler(space);
     
@@ -239,14 +235,23 @@ export class ConnectomeHost {
    */
   private async createFresh(app: ConnectomeApplication): Promise<{ space: Space; veilState: VEILStateManager }> {
     const { space, veilState } = await app.createSpace(this.referenceRegistry);
-    
+
     // Register core services before initialization
     this.referenceRegistry.set('space', space);
     this.referenceRegistry.set('veilState', veilState);
-    
+
     // Initialize core infrastructure BEFORE app.initialize()
     await this.initializeComponentInfrastructure(space);
-    
+
+    // Attach debug server BEFORE app.initialize() so it captures all frames
+    if (this.config.debug?.enabled) {
+      const port = this.config.debug.port || 3015;
+      this.debugServer = new DebugServer(space, { port });
+      registerDebugServer(this.debugServer);
+      await this.debugServer.start();
+      console.log(`🔍 Debug UI will capture all frames from initialization`);
+    }
+
     await app.initialize(space, veilState);
     await this.resolveAllReferences(space);
     return { space, veilState };
