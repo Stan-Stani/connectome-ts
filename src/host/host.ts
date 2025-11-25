@@ -549,12 +549,14 @@ export class ConnectomeHost {
       return;
     }
 
-    // Infrastructure components that are added by the host separately
+    // Infrastructure components that are added by the host/space separately
+    // These should not be restored from facets
     const infrastructureTypes = new Set([
       'ComponentStateReceptor',
       'ComponentManager',
       'PersistenceMaintainer',
-      'VEILOperationReceptor'
+      'VEILOperationReceptor',
+      'HostHandlerComponent'
     ]);
 
     console.log(`[Host] Reconstructing ${componentFacets.length} components from VEIL facets...`);

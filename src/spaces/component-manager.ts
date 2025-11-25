@@ -64,12 +64,27 @@ export class ComponentManager extends Component {
     }
   }
 
+  // Infrastructure components that should not be instantiated by ComponentManager
+  private static readonly INFRASTRUCTURE_TYPES = new Set([
+    'ComponentStateReceptor',
+    'ComponentManager',
+    'PersistenceMaintainer',
+    'VEILOperationReceptor',
+    'HostHandlerComponent'
+  ]);
+
   /**
    * Instantiate a component from its component-state facet
    */
   private async instantiateComponent(facet: ComponentStateFacet, events: SpaceEvent[]): Promise<void> {
     const { componentId, componentType, state: config } = facet;
     const facetId = `component-state:${componentId}`;
+
+    // Skip infrastructure components
+    if (ComponentManager.INFRASTRUCTURE_TYPES.has(componentType)) {
+      this.instantiatedComponents.add(facetId);
+      return;
+    }
 
     console.log(`[ComponentManager] Instantiating component ${componentType} (${componentId}) from facet`);
 
