@@ -108,16 +108,16 @@ export * from './widgets';
 
 // AXON exports
 export { createAxonEnvironment } from './axon/environment';
-export { createAxonEnvironmentV2 } from './axon/environment-v2';
-export { 
+export {
   IAxonManifest,
+  IAxonManifestExtended,
+  IAxonModuleExports,
   IAxonComponentConstructor,
   IComponent,
   IVEILComponent,
   IInteractiveComponent,
   IAxonEnvironment
 } from './axon/interfaces';
-export * from './axon/interfaces-v2';
 
 // Tracing exports
 export * from './tracing';

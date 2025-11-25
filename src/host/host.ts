@@ -649,8 +649,8 @@ export class ConnectomeHost {
     const moduleCode = await response.text();
 
     // Create module environment
-    const { createAxonEnvironmentV2 } = await import('../axon/environment-v2');
-    const env = createAxonEnvironmentV2();
+    const { createAxonEnvironment } = await import('../axon/environment');
+    const env = createAxonEnvironment();
 
     // Write module to temp file for proper Node.js module loading
     const Module = require('module');

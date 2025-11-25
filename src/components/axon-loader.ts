@@ -1,20 +1,11 @@
 import { Component } from '../spaces/component';
 import { SpaceEvent } from '../spaces/types';
 import { createAxonEnvironment } from '../axon/environment';
-import { createAxonEnvironmentV2 } from '../axon/environment-v2';
-import { IAxonManifest, IAxonComponentConstructor } from '../axon/interfaces';
-import { IAxonManifestV2 } from '../axon/interfaces-v2';
+import { IAxonManifestExtended } from '../axon/interfaces';
 import { persistable, persistent } from '../persistence/decorators';
 import { Space } from '../spaces/space';
-import { 
-  Receptor, 
-  Effector, 
-  Transform, 
-  Maintainer 
-} from '../spaces/receptor-effector-types';
 
-// Use the extended interface for RETM support
-type AxonManifest = IAxonManifestV2;
+type AxonManifest = IAxonManifestExtended;
 
 interface ModuleVersions {
   [module: string]: string;
@@ -64,10 +55,7 @@ export class AxonLoaderComponent extends Component {
   
   @persistent()
   private loadedComponentState?: any;
-  
-  @persistent()
-  private moduleType: 'component' | 'flex' | 'mixed' = 'component';
-  
+
   @persistent()
   private loadedExports: string[] = [];
   
@@ -204,7 +192,7 @@ export class AxonLoaderComponent extends Component {
         throw new Error(`Failed to fetch manifest: ${response.status} ${response.statusText}`);
       }
       
-      this.manifest = await response.json() as IAxonManifest;
+      this.manifest = await response.json() as AxonManifest;
       console.log(`[AxonLoader] Loaded manifest:`, this.manifest);
       
       // Resolve module URL relative to manifest
@@ -251,7 +239,7 @@ export class AxonLoaderComponent extends Component {
           throw new Error(`Failed to fetch dependency manifest: ${response.status}`);
         }
         
-        const depManifest = await response.json() as IAxonManifest;
+        const depManifest = await response.json() as AxonManifest;
         const depModuleUrl = new URL(depManifest.main, depUrl).toString();
         
         // Fetch dependency module
@@ -325,16 +313,9 @@ export class AxonLoaderComponent extends Component {
       }
       
       const moduleCode = await response.text();
-      
-      // Check if manifest indicates FLEX component exports
-      const exports = this.manifest?.exports;
-      const hasFLEXExports = exports && (
-        (exports.components && exports.components.length > 0) ||
-        ((exports as any).afferents && (exports as any).afferents.length > 0)
-      );
-      
-      // Create appropriate environment
-      const env = hasFLEXExports ? createAxonEnvironmentV2() : createAxonEnvironment();
+
+      // Create environment with all FLEX base classes
+      const env = createAxonEnvironment();
       
       // Load dependencies first
       await this.loadDependencies(env);
@@ -368,13 +349,8 @@ export class AxonLoaderComponent extends Component {
       moduleFunc(moduleExports, module, enhancedEnv);
       
       // All modules go through unified FLEX loading
-      // Modules can export: { component?, components?, afferents? }
+      // Load all components from the module
       await this.loadFLEXModule(module.exports);
-
-      // Determine module type for metadata
-      const hasComponent = module.exports.default || module.exports.component;
-      this.moduleType = hasFLEXExports && hasComponent ? 'mixed' :
-                        hasFLEXExports ? 'flex' : 'component';
       
       // Set up hot reload if enabled
       if (this.manifest?.hotReload) {
@@ -480,12 +456,39 @@ export class AxonLoaderComponent extends Component {
     // Register all components from 'components' export
     // Components set their own priority property
     if (moduleExports.components) {
+      // Get VEIL state to check for existing component-state facets
+      const veilState = space.getVEILState?.();
+
       for (const [name, ComponentClass] of Object.entries(moduleExports.components)) {
         if (typeof ComponentClass === 'function') {
           try {
+            const componentId = `component:${name}`;
+
+            // Check if component already exists
+            const existing = space.getComponentById(componentId);
+            if (existing) {
+              console.log(`[AxonLoader] Component already exists: ${name}`);
+              this.loadedExports.push(componentId);
+              continue;
+            }
+
             const component = new (ComponentClass as any)();
-            space.addComponent(component, `component:${name}`);
-            this.loadedExports.push(`component:${name}`);
+
+            // Check for existing component-state facet and apply persisted state
+            if (veilState) {
+              const stateFacetId = `component-state:${componentId}`;
+              const stateFacet = veilState.getState().facets.get(stateFacetId);
+
+              if (stateFacet && stateFacet.state) {
+                console.log(`[AxonLoader] Applying persisted state to ${name} from facet ${stateFacetId}`);
+                // Apply state properties to component (excluding internal metadata)
+                const { _axonMetadata, ...restState } = stateFacet.state as any;
+                Object.assign(component, restState);
+              }
+            }
+
+            space.addComponent(component, componentId);
+            this.loadedExports.push(componentId);
             console.log(`[AxonLoader] Registered component: ${name}`);
           } catch (error) {
             console.error(`[AxonLoader] Failed to register component ${name}:`, error);

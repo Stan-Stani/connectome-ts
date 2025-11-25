@@ -199,8 +199,8 @@ export class ComponentManager extends Component {
       const moduleCode = await response.text();
       
       // Create module environment similar to AxonLoader
-      const { createAxonEnvironmentV2 } = require('../axon/environment-v2');
-      const env = createAxonEnvironmentV2();
+      const { createAxonEnvironment } = require('../axon/environment');
+      const env = createAxonEnvironment();
       
       // Write module to temp file for proper Node.js module loading
       const Module = require('module');
@@ -257,12 +257,26 @@ export class ComponentManager extends Component {
             }
           }
 
-          // Register all components from the module
+          // Register and instantiate all components from the module
           for (const [name, cls] of Object.entries(moduleExportsObject.components)) {
             if (typeof cls === 'function') {
               const className = (cls as any).name || name;
               if (!ComponentRegistry.has(className)) {
                 ComponentRegistry.register(className, cls as any);
+              }
+
+              // Instantiate auxiliary components (not the main requested one)
+              if (className !== componentType) {
+                const existingComponent = this.space.getComponentById(`component:${className}`);
+                if (!existingComponent) {
+                  try {
+                    const auxComponent = new (cls as any)();
+                    this.space.addComponent(auxComponent, `component:${className}`);
+                    console.log(`[ComponentManager] Instantiated auxiliary component: ${className}`);
+                  } catch (err) {
+                    console.error(`[ComponentManager] Failed to instantiate auxiliary component ${className}:`, err);
+                  }
+                }
               }
             }
           }
