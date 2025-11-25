@@ -61,32 +61,150 @@ export class AnthropicProvider implements LLMProvider {
     const conversationMessages = apiMessages.filter(m => m.role !== 'system');
     
     // Build Anthropic messages
-    const anthropicMessages: Anthropic.MessageParam[] = conversationMessages.map((msg, idx) => {
-      // Handle cache control metadata
-      const cacheControl = msg.metadata?.cacheControl;
-      let content: Anthropic.MessageParam['content'];
-      
-      // For assistant messages, trim trailing whitespace (Anthropic requirement)
-      const messageContent = msg.role === 'assistant' ? msg.content.trimEnd() : msg.content;
-      
-      if (cacheControl && this.getCapabilities().supportsCaching) {
-        // For messages with cache control, wrap in appropriate format
-        content = [{
-          type: 'text',
-          text: messageContent,
-          cache_control: {
-            type: cacheControl.type as 'ephemeral'
+    const anthropicMessages: Anthropic.MessageParam[] = await Promise.all(
+      conversationMessages.map(async (msg, idx) => {
+        // Handle cache control metadata
+        const cacheControl = msg.metadata?.cacheControl;
+        const attachments = msg.metadata?.attachments;
+        
+        // For assistant messages, trim trailing whitespace (Anthropic requirement)
+        const messageContent = msg.role === 'assistant' ? msg.content.trimEnd() : msg.content;
+        
+        let content: Anthropic.MessageParam['content'];
+        
+        // Check if we have image attachments
+        if (attachments && Array.isArray(attachments) && attachments.length > 0) {
+          // Build multi-modal content blocks
+          const contentBlocks: Anthropic.MessageParam['content'] = [];
+          
+          // Add attachments (images and documents)
+          for (const attachment of attachments) {
+            const contentType = attachment.contentType || attachment.mimeType || '';
+            
+            // Check if this is an image
+            const isImage = contentType.startsWith('image/') || attachment.type === 'image';
+            
+            // Check if this is a supported document
+            const isDocument = contentType === 'application/pdf' || 
+                              contentType === 'text/plain' ||
+                              attachment.type === 'document';
+            
+            if (isImage) {
+              try {
+                // Get URL (Discord format or legacy format)
+                const imageUrl = attachment.url || attachment.data;
+                
+                if (!imageUrl) {
+                  console.warn('[AnthropicProvider] Image attachment has no URL or data, skipping');
+                  continue;
+                }
+                
+                // Fetch the image and convert to base64 (if it's a URL)
+                let imageData: string;
+                if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+                  imageData = await this.fetchImageAsBase64(imageUrl);
+                } else {
+                  // Assume it's already base64
+                  imageData = imageUrl;
+                }
+                
+                // Determine media type
+                const mediaType = this.getAnthropicMediaType(contentType);
+                
+                if (mediaType) {
+                  contentBlocks.push({
+                    type: 'image',
+                    source: {
+                      type: 'base64',
+                      media_type: mediaType,
+                      data: imageData
+                    }
+                  } as Anthropic.ImageBlockParam);
+                  
+                  console.log(`[AnthropicProvider] Added image attachment: ${attachment.name || 'unnamed'} (${contentType})`);
+                }
+              } catch (error) {
+                console.error(`[AnthropicProvider] Failed to process image attachment:`, error);
+                // Continue without this image
+              }
+            } else if (isDocument) {
+              try {
+                // Get URL
+                const documentUrl = attachment.url || attachment.data;
+                
+                if (!documentUrl) {
+                  console.warn('[AnthropicProvider] Document attachment has no URL or data, skipping');
+                  continue;
+                }
+                
+                // Fetch the document and convert to base64 (if it's a URL)
+                let documentData: string;
+                if (documentUrl.startsWith('http://') || documentUrl.startsWith('https://')) {
+                  documentData = await this.fetchImageAsBase64(documentUrl); // Same method works for any file
+                } else {
+                  // Assume it's already base64
+                  documentData = documentUrl;
+                }
+                
+                // Determine document media type
+                const docMediaType = this.getAnthropicDocumentMediaType(contentType);
+                
+                if (docMediaType) {
+                  contentBlocks.push({
+                    type: 'document',
+                    source: {
+                      type: 'base64',
+                      media_type: docMediaType,
+                      data: documentData
+                    }
+                  } as Anthropic.DocumentBlockParam);
+                  
+                  console.log(`[AnthropicProvider] Added document attachment: ${attachment.name || 'unnamed'} (${contentType})`);
+                }
+              } catch (error) {
+                console.error(`[AnthropicProvider] Failed to process document attachment:`, error);
+                // Continue without this document
+              }
+            }
           }
-        }];
-      } else {
-        content = messageContent;
-      }
-      
-      return {
-        role: msg.role as 'user' | 'assistant',
-        content
-      };
-    });
+          
+          // Add text content after images
+          if (cacheControl && this.getCapabilities().supportsCaching) {
+            contentBlocks.push({
+              type: 'text',
+              text: messageContent,
+              cache_control: {
+                type: cacheControl.type as 'ephemeral'
+              }
+            } as Anthropic.TextBlockParam);
+          } else {
+            contentBlocks.push({
+              type: 'text',
+              text: messageContent
+            } as Anthropic.TextBlockParam);
+          }
+          
+          content = contentBlocks;
+        } else if (cacheControl && this.getCapabilities().supportsCaching) {
+          // Text only with cache control
+          content = [{
+            type: 'text',
+            text: messageContent,
+            cache_control: {
+              type: cacheControl.type as 'ephemeral'
+            }
+          }];
+        } else {
+          // Plain text
+          content = messageContent;
+        }
+        
+        return {
+          role: msg.role as 'user' | 'assistant',
+          content
+        };
+      })
+    );
 
     // Prepare request for tracing
     const request = {
@@ -264,5 +382,58 @@ export class AnthropicProvider implements LLMProvider {
     }
     
     return false;
+  }
+  
+  /**
+   * Fetch an image from a URL and convert to base64
+   */
+  private async fetchImageAsBase64(url: string): Promise<string> {
+    const fetch = (await import('node-fetch')).default;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+    }
+    
+    const buffer = await response.buffer();
+    return buffer.toString('base64');
+  }
+  
+  /**
+   * Map content type to Anthropic's image media type format
+   */
+  private getAnthropicMediaType(contentType: string): 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' | null {
+    const normalized = contentType.toLowerCase();
+    
+    if (normalized.includes('jpeg') || normalized.includes('jpg')) {
+      return 'image/jpeg';
+    }
+    if (normalized.includes('png')) {
+      return 'image/png';
+    }
+    if (normalized.includes('gif')) {
+      return 'image/gif';
+    }
+    if (normalized.includes('webp')) {
+      return 'image/webp';
+    }
+    
+    return null;
+  }
+  
+  /**
+   * Map content type to Anthropic's document media type format
+   */
+  private getAnthropicDocumentMediaType(contentType: string): 'application/pdf' | 'text/plain' | null {
+    const normalized = contentType.toLowerCase();
+    
+    if (normalized.includes('pdf')) {
+      return 'application/pdf';
+    }
+    if (normalized.includes('text/plain') || normalized.includes('text')) {
+      return 'text/plain';
+    }
+    
+    return null;
   }
 }

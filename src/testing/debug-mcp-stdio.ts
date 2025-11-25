@@ -251,7 +251,7 @@ async function processMessage(message: any) {
     switch (method) {
       case 'initialize':
         sendResponse(id, {
-          protocolVersion: '2025-06-18',
+          protocolVersion: '2024-11-05',
           capabilities: {
             tools: {}
           },
