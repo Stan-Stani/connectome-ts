@@ -288,6 +288,15 @@ export class ConnectomeHost {
     await this.initializeComponentInfrastructure(space);
     console.log('[Host.restore] Infrastructure initialized');
 
+    // Start debug server during restore as well
+    if (this.config.debug?.enabled && !this.debugServer) {
+      const port = this.config.debug.port || 3015;
+      this.debugServer = new DebugServer(space, { port });
+      registerDebugServer(this.debugServer);
+      await this.debugServer.start();
+      console.log(`🔍 Debug server started during restore`);
+    }
+
     // Set up dynamic component handler BEFORE restoring components
     this.setupDynamicComponentHandler(space);
 
