@@ -6,6 +6,7 @@ import {
   createStateFacet,
   createEventFacet
 } from '../helpers/factories';
+import { ComponentConstraintFacet, PriorityConstraintFacet } from './constraints';
 
 /**
  * Base component class
@@ -42,9 +43,29 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
    * Default: 0
    */
   priority: number = 0;
+  private customConstraintFacets: ComponentConstraintFacet[] = [];
 
   get enabled(): boolean {
     return this._enabled;
+  }
+
+  /**
+   * Register an additional constraint facet for this component.
+   */
+  protected addConstraintFacet(facet: ComponentConstraintFacet): void {
+    this.customConstraintFacets.push(facet);
+  }
+
+  /**
+   * Get all constraint facets (default priority + custom facets).
+   */
+  getConstraintFacets(): ComponentConstraintFacet[] {
+    const priorityFacet: PriorityConstraintFacet = {
+      type: 'priority',
+      priority: this.priority,
+      source: 'component.priority'
+    };
+    return [priorityFacet, ...this.customConstraintFacets];
   }
   
   set enabled(value: boolean) {

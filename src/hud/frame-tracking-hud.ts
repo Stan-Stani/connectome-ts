@@ -19,6 +19,7 @@ import { getGlobalTracer, TraceCategory } from '../tracing';
 import { VEILStateManager } from '../veil/veil-state';
 import { FrameRenderCache } from './frame-render-cache';
 import { RenderContext, CachedChunk } from './render-context-types';
+import { stripTurnMarkers } from '../utils/turn-markers';
 
 export class FrameTrackingHUD implements CompressibleHUD {
   private frameRenderCache: FrameRenderCache;
@@ -395,6 +396,8 @@ export class FrameTrackingHUD implements CompressibleHUD {
               break;
             }
         
+        content = stripTurnMarkers(content);
+
         if (content) {
           contentParts.push({ content, facetId: facet.id, type: facet.type, facet });
         }

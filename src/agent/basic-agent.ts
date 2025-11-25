@@ -33,6 +33,7 @@ import {
 import { BasicAgentConstructorOptions, isAgentOptions } from './agent-factory';
 import { SpaceEvent } from '../spaces/types';
 import { parseInlineParameters } from './action-parser';
+import { stripTurnMarkers } from '../utils/turn-markers';
 
 export class BasicAgent implements AgentInterface {
   private state: AgentState = {
@@ -306,9 +307,8 @@ export class BasicAgent implements AgentInterface {
     const events: Array<{ topic: string; payload: any }> = [];
     let hasMoreToSay = false;
     
-    // The model outputs plain text without <my_turn> tags
-    // The HUD handles formatting when rendering
-    let turnContent = completion;
+    // Normalize turn markers so downstream rendering doesn't double-wrap agent turns
+    let turnContent = stripTurnMarkers(completion);
     
     // For now, assume the turn is complete if we got a response
     // In a real implementation, we'd check if we hit max tokens
@@ -460,7 +460,7 @@ export class BasicAgent implements AgentInterface {
     protectedSpeech = protectedSpeech.replace(/\{@[\w.-]+(?:\s*\([^)]*\)|\s*\{[\s\S]*?\})?\}/g, '');
     
     // Restore backticks
-    speechContent = protectedSpeech;
+    speechContent = stripTurnMarkers(protectedSpeech);
     speechBacktickPlaceholders.forEach((original, index) => {
       speechContent = speechContent.replace(`__SPEECH_BACKTICK_${index}__`, original);
     });
