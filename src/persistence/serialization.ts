@@ -5,6 +5,7 @@
 import { Component } from '../spaces/component';
 import { Space } from '../spaces/space';
 import { VEILState, Facet, StateFacet, hasStateAspect, hasAgentGeneratedAspect, hasStreamAspect, hasContentAspect } from '../veil/types';
+import { ComponentStateFacet } from '../veil/facet-types';
 import { 
   SerializableValue, 
   SerializedComponent, 
@@ -315,6 +316,14 @@ function serializeFacet(facet: Facet): any {
       serialized.entityType = stateFacet.entityType;
       serialized.entityId = stateFacet.entityId;
       serialized.scopes = stateFacet.scopes;
+      break;
+    }
+    case 'component-state': {
+      const componentStateFacet = facet as ComponentStateFacet;
+      serialized.componentType = componentStateFacet.componentType;
+      serialized.componentClass = componentStateFacet.componentClass;
+      serialized.componentId = componentStateFacet.componentId;
+      serialized.elementId = componentStateFacet.elementId;
       break;
     }
   }

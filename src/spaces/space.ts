@@ -129,7 +129,6 @@ export class Space {
   private nextFrameCallbacks: (() => void)[] = [];
 
   private componentOrderingStrategy: ComponentOrderingStrategy = new PriorityOrderingStrategy();
-  private componentConstraintFacets: Map<string, ComponentConstraintFacet[]> = new Map();
 
   /**
    * Runtime flag to enable detailed component execution tracing
@@ -335,8 +334,52 @@ export class Space {
 
   private updateConstraintFacetsForComponent(componentId: string, component: Component): void {
     try {
-      const facets = component.getConstraintFacets().map(facet => ({ ...facet }));
-      this.componentConstraintFacets.set(componentId, facets);
+      const constraints = component.getConstraintFacets().map(facet => ({ ...facet }));
+      const parentFacetId = `component-state:${componentId}`;
+      const constraintsFacetId = `constraints:${componentId}`;
+
+      // Get or create the parent component-state facet
+      const parentFacet = this.veilState.getState().facets.get(parentFacetId);
+
+      // Create the constraints child facet
+      const constraintsChildFacet = {
+        id: constraintsFacetId,
+        type: 'component-constraints',
+        state: { constraints }
+      };
+
+      if (parentFacet) {
+        // Update existing parent facet with constraints as nested child
+        const existingChildren = (parentFacet as any).children || [];
+        const otherChildren = existingChildren.filter((c: any) => c.id !== constraintsFacetId);
+
+        this.veilState.applyDeltasDirect([{
+          type: 'rewriteFacet',
+          id: parentFacetId,
+          changes: {
+            children: [...otherChildren, constraintsChildFacet]
+          }
+        }]);
+      } else {
+        // Create new component-state facet with constraints nested inside
+        // Extract component type from constructor name, infer component class from priority
+        const componentType = component.constructor.name || 'Unknown';
+        const componentClass = this.inferComponentClass(component);
+
+        this.veilState.applyDeltasDirect([{
+          type: 'addFacet',
+          facet: {
+            id: parentFacetId,
+            type: 'component-state',
+            componentType,
+            componentClass,
+            componentId,
+            elementId: 'root', // Components are attached to Space (root element)
+            state: {},
+            children: [constraintsChildFacet]
+          }
+        }]);
+      }
     } catch (error) {
       console.warn(
         `[Space] Failed to capture constraint facets for ${componentId}:`,
@@ -349,6 +392,37 @@ export class Space {
     for (const [componentId, component] of this.componentRegistry.entries()) {
       this.updateConstraintFacetsForComponent(componentId, component);
     }
+  }
+
+  /**
+   * Infer component class from component's priority
+   */
+  private inferComponentClass(component: Component): 'modulator' | 'afferent' | 'receptor' | 'transform' | 'effector' | 'maintainer' {
+    const priority = component.priority;
+
+    // FLEX priority ranges (see FLEX_ARCHITECTURE.md)
+    if (priority < 100) return 'modulator';      // 0-99
+    if (priority < 200) return 'receptor';       // 100-199
+    if (priority < 300) return 'transform';      // 200-299
+    if (priority < 400) return 'effector';       // 300-399
+    return 'maintainer';                          // 400+
+  }
+
+  /**
+   * Get constraint facets for a component from VEIL state
+   */
+  getConstraintFacetsForComponent(componentId: string): ComponentConstraintFacet[] {
+    const parentFacetId = `component-state:${componentId}`;
+    const constraintsFacetId = `constraints:${componentId}`;
+    const parentFacet = this.veilState.getState().facets.get(parentFacetId);
+
+    if (!parentFacet) return [];
+
+    const constraintsChild = (parentFacet as any).children?.find(
+      (c: any) => c.id === constraintsFacetId
+    );
+
+    return constraintsChild?.state?.constraints || [];
   }
 
   /**
