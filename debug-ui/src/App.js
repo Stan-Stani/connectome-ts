@@ -1034,6 +1034,27 @@ export const App = {
             </div>
             <div class="frame-detail-body" v-show="!state.panelCollapsed.frameDetail">
               <template v-if="selectedFrame">
+                <div class="section">
+                  <h3>Trigger Event</h3>
+                  <div class="log-viewer events">
+                    <div v-if="!selectedFrame.events?.length" class="text-muted">No trigger event.</div>
+                    <div
+                      v-for="(event, idx) in selectedFrame.events"
+                      :key="event.id || idx"
+                      class="log-entry"
+                      @click="selectEvent(event, idx)"
+                    >
+                      <span class="log-timestamp">{{ formatTimestamp(event.timestamp).split(' ')[1] }}</span>
+                      <span class="log-type">{{ event.topic }}</span>
+                      <span class="log-content">
+                        <span v-if="event.phase && event.phase !== 'none'" class="log-phase">[{{ event.phase }}]</span>
+                        <span v-if="event.target" class="log-target">{{ event.target.elementPath?.join('/') || event.target.elementId }}</span>
+                        <span v-if="event.payload" class="log-payload">{{ truncate(stringify(event.payload), 80) }}</span>
+                      </span>
+                      <span class="log-meta" v-if="eventMeta(event)">{{ eventMeta(event) }}</span>
+                    </div>
+                  </div>
+                </div>
                 <div class="section" v-if="selectedFrame.renderedContext">
                   <h3>Rendered Context</h3>
                   <div class="section-body message-list">
@@ -1170,27 +1191,6 @@ export const App = {
                         </template>
                       </div>
                     </template>
-                  </div>
-                </div>
-                <div class="section">
-                  <h3>Events</h3>
-                  <div class="log-viewer events">
-                    <div v-if="!selectedFrame.events?.length" class="text-muted">No events observed for this frame.</div>
-                    <div
-                      v-for="(event, idx) in selectedFrame.events"
-                      :key="event.id || idx"
-                      class="log-entry"
-                      @click="selectEvent(event, idx)"
-                    >
-                      <span class="log-timestamp">{{ formatTimestamp(event.timestamp).split(' ')[1] }}</span>
-                      <span class="log-type">{{ event.topic }}</span>
-                      <span class="log-content">
-                        <span v-if="event.phase && event.phase !== 'none'" class="log-phase">[{{ event.phase }}]</span>
-                        <span v-if="event.target" class="log-target">{{ event.target.elementPath?.join('/') || event.target.elementId }}</span>
-                        <span v-if="event.payload" class="log-payload">{{ truncate(stringify(event.payload), 80) }}</span>
-                      </span>
-                      <span class="log-meta" v-if="eventMeta(event)">{{ eventMeta(event) }}</span>
-                    </div>
                   </div>
                 </div>
               </template>
