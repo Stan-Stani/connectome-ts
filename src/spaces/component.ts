@@ -214,28 +214,8 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
     if (this._enabled) {
       this.onEnable();
     }
-    
-    // Auto-register RETM components with Space
-    if (space && 'addReceptor' in space) { 
-      const { isReceptor, isEffector, isTransform, isMaintainer } = require('../utils/retm-type-guards');
-      
-      if (isReceptor(this)) {
-        console.log(`[Component._attach] Auto-registering receptor: ${this.constructor.name}`);
-        (space as any).addReceptor(this);
-      }
-      if (isEffector(this)) {
-        console.log(`[Component._attach] Auto-registering effector: ${this.constructor.name}`);
-        (space as any).addEffector(this);
-      }
-      if (isTransform(this)) {
-        console.log(`[Component._attach] Auto-registering transform: ${this.constructor.name}`);
-        (space as any).addTransform(this);
-      }
-      if (isMaintainer(this)) {
-        console.log(`[Component._attach] Auto-registering maintainer: ${this.constructor.name}`);
-        (space as any).addMaintainer(this);
-      }
-    }
+
+    // FLEX: Components set their own priority - no auto-registration needed
   }
   
   /**
@@ -294,18 +274,19 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
   }
   
   /**
-   * Get the component's ID (alias for id property for compatibility)
+   * Get the component's ID (legacy alias for backwards compatibility)
+   * @deprecated Use `id` property directly
    */
   protected get elementId(): string {
     return this.id;
   }
-  
+
   /**
-   * Get a reference to this component (shimmed as ElementRef)
+   * Get a reference to this component
    */
   public getRef(): ElementRef {
     return {
-      elementId: this.id,
+      elementId: this.id,        // Component ID
       elementPath: ['root', this.id],
       elementType: this.constructor.name
     };

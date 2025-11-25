@@ -31,13 +31,8 @@ import {
 } from './receptor-effector-types';
 import { VEILOperationReceptor } from './migration-adapters';
 import { groupByPriority } from '../utils/priorities';
-import { 
-  isReceptor, 
-  isTransform, 
-  isEffector, 
-  isMaintainer,
-  isModulator 
-} from '../utils/retm-type-guards';
+// Legacy RETM type guards - kept for backwards compatibility but not used in FLEX
+// import { isReceptor, isTransform, isEffector, isMaintainer, isModulator } from '../utils/retm-type-guards';
 import { generateId } from './utils';
 import { ComponentOrderingStrategy, PriorityOrderingStrategy } from './ordering/component-ordering';
 import { ComponentConstraintFacet } from './constraints';
@@ -442,34 +437,6 @@ export class Space {
 
     // Record in frame
     this.currentFrame.deltas.push(operation);
-  }
-
-  // MARTEM registration shims - map to components list
-  
-  addModulator(modulator: Modulator): void {
-    // Already added via addComponent, ensure priority/sorting
-    modulator.priority = 0;
-    this.sortComponents();
-  }
-  
-  addReceptor(receptor: Receptor): void {
-    receptor.priority = 100;
-    this.sortComponents();
-  }
-  
-  addTransform(transform: Transform): void {
-    transform.priority = 200;
-    this.sortComponents();
-  }
-  
-  addEffector(effector: Effector): void {
-    effector.priority = 300;
-    this.sortComponents();
-  }
-  
-  addMaintainer(maintainer: Maintainer): void {
-    maintainer.priority = 400;
-    this.sortComponents();
   }
 
   /**

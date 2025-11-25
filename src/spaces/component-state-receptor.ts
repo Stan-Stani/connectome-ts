@@ -36,10 +36,11 @@ export class ComponentStateReceptor extends Component {
 
     // Generate component ID
     let componentId = payload.componentId;
-    if (!componentId && payload.elementId) {
-      // Legacy compatibility: use elementId as prefix
-      if (payload.elementId !== 'root') {
-        componentId = `${payload.elementId}:${componentType}`;
+    const parentId = payload.parentId || payload.elementId; // Support both names
+    if (!componentId && parentId) {
+      // Use parent ID as prefix for component ID
+      if (parentId !== 'root') {
+        componentId = `${parentId}:${componentType}`;
       }
     }
     if (!componentId) {
@@ -61,7 +62,7 @@ export class ComponentStateReceptor extends Component {
       componentId,
       componentType,
       componentClass,
-      elementId: payload.elementId || 'root',
+      elementId: parentId || 'root', // Still called elementId in facet for backwards compat
       initialState: config
     });
 

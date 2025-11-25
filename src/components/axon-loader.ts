@@ -29,17 +29,15 @@ interface ParsedAxonUrl {
 
 /**
  * AxonLoaderComponent - Loads components from external AXON URLs
- * 
- * This component enables elements to connect to external services by loading
- * component modules dynamically that generate VEIL and handle events.
- * 
+ *
+ * This component enables dynamic loading of component modules from external
+ * services that generate VEIL facets and handle events.
+ *
  * Usage:
  * ```typescript
- * const element = new Element('my-service');
  * const loader = new AxonLoaderComponent();
- * element.addComponent(loader);
+ * space.addComponent(loader);
  * await loader.connect('axon://localhost:8080/modules/my-service/manifest');
- * space.addChild(element);
  * ```
  */
 @persistable(1)
@@ -93,7 +91,7 @@ export class AxonLoaderComponent extends Component {
   /**
    * Called when component is mounted
    * FRESH START: Load module and emit component:add events for maintainer to process
-   * RESTORATION: Do nothing (component already in element-tree facet, maintainer creates it)
+   * RESTORATION: Do nothing (component already in component-state facet, maintainer creates it)
    */
   async onMount(): Promise<void> {
     if (this.axonUrl && this.loadedExports.length === 0) {
@@ -441,7 +439,10 @@ export class AxonLoaderComponent extends Component {
   
   /**
    * Load a FLEX module and register its exports
-   * Supports both new FLEX style (components) and legacy MARTEM style (receptors, effectors, etc.)
+   *
+   * Module export format:
+   * - components: Object of { name: ComponentClass } - all components to load
+   * - initializer: Optional initialization handler with setConnectionParams/initialize
    */
   private async loadFLEXModule(moduleExports: any): Promise<void> {
     const space = this.space;
@@ -456,7 +457,6 @@ export class AxonLoaderComponent extends Component {
     if (moduleExports.initializer && this.parsedUrl?.params) {
       console.log(`[AxonLoader] Calling initializer with params:`, this.parsedUrl.params);
       try {
-        // Call setConnectionParams if it exists
         if (typeof moduleExports.initializer.setConnectionParams === 'function') {
           moduleExports.initializer.setConnectionParams({
             host: this.parsedUrl.host,
@@ -477,159 +477,24 @@ export class AxonLoaderComponent extends Component {
       }
     }
 
-    // Register receptors (mount to Space root first)
-    if (moduleExports.receptors) {
-      for (const [name, ReceptorClass] of Object.entries(moduleExports.receptors)) {
-        if (typeof ReceptorClass === 'function') {
+    // Register all components from 'components' export
+    // Components set their own priority property
+    if (moduleExports.components) {
+      for (const [name, ComponentClass] of Object.entries(moduleExports.components)) {
+        if (typeof ComponentClass === 'function') {
           try {
-            const receptor = new (ReceptorClass as any)();
-            // Mount to Space (root element) so it has element property
-            space.addComponent(receptor);
-            space.addReceptor(receptor);
-            this.loadedExports.push(`receptor:${name}`);
-            console.log(`[AxonLoader] Registered receptor: ${name}`);
+            const component = new (ComponentClass as any)();
+            space.addComponent(component, `component:${name}`);
+            this.loadedExports.push(`component:${name}`);
+            console.log(`[AxonLoader] Registered component: ${name}`);
           } catch (error) {
-            console.error(`[AxonLoader] Failed to register receptor ${name}:`, error);
-          }
-        }
-      }
-    }
-    
-    // Register effectors
-    if (moduleExports.effectors) {
-      for (const [name, EffectorClass] of Object.entries(moduleExports.effectors)) {
-        if (typeof EffectorClass === 'function') {
-          try {
-            const effector = new (EffectorClass as any)();
-            space.addEffector(effector);
-            this.loadedExports.push(`effector:${name}`);
-            console.log(`[AxonLoader] Registered effector: ${name}`);
-          } catch (error) {
-            console.error(`[AxonLoader] Failed to register effector ${name}:`, error);
-          }
-        }
-      }
-    }
-    
-    // Register transforms
-    if (moduleExports.transforms) {
-      for (const [name, TransformClass] of Object.entries(moduleExports.transforms)) {
-        if (typeof TransformClass === 'function') {
-          try {
-            const transform = new (TransformClass as any)();
-            space.addTransform(transform);
-            this.loadedExports.push(`transform:${name}`);
-            console.log(`[AxonLoader] Registered transform: ${name}`);
-          } catch (error) {
-            console.error(`[AxonLoader] Failed to register transform ${name}:`, error);
-          }
-        }
-      }
-    }
-    
-    // Register maintainers
-    if (moduleExports.maintainers) {
-      for (const [name, MaintainerClass] of Object.entries(moduleExports.maintainers)) {
-        if (typeof MaintainerClass === 'function') {
-          try {
-            const maintainer = new (MaintainerClass as any)();
-            space.addMaintainer(maintainer);
-            this.loadedExports.push(`maintainer:${name}`);
-            console.log(`[AxonLoader] Registered maintainer: ${name}`);
-          } catch (error) {
-            console.error(`[AxonLoader] Failed to register maintainer ${name}:`, error);
+            console.error(`[AxonLoader] Failed to register component ${name}:`, error);
           }
         }
       }
     }
 
-    // Register afferents (via component:add events for pure RETM)
-    if (moduleExports.afferents) {
-      for (const [name, AfferentClass] of Object.entries(moduleExports.afferents)) {
-        if (typeof AfferentClass === 'function') {
-          try {
-            const afferentClassName = this.manifest?.componentClass || (AfferentClass as any).name || name;
-            const { ComponentRegistry } = require('../persistence/component-registry');
-            ComponentRegistry.register(afferentClassName, AfferentClass as any);
-            
-            // Build config with URL params at top level (for setConnectionParams)
-            const config: any = {
-              ...(this.manifest?.config || {}),
-              ...(this.parsedUrl?.params || {}),  // host, path, guild, token, agent, etc.
-              _axonMetadata: {
-                axonUrl: this.axonUrl,
-                moduleUrl: this.moduleUrl,
-                manifestUrl: this.manifestUrl,
-                host: this.parsedUrl?.host,
-                path: this.parsedUrl?.path,
-                isAfferent: true  // Flag for maintainer
-              }
-            };
-            
-            // Emit component:add - Maintainer will instantiate and call setConnectionParams
-            space.emit({
-              topic: 'component:add',
-              source: this.getRef(),
-              payload: {
-                elementId: this.id,
-                componentType: afferentClassName,
-                componentClass: 'component',
-                config
-              },
-              timestamp: Date.now()
-            });
-            
-            this.loadedExports.push(`afferent:${name}`);
-            console.log(`[AxonLoader] Emitted component:add for afferent: ${name}`);
-          } catch (error) {
-            console.error(`[AxonLoader] Failed to register afferent ${name}:`, error);
-          }
-        }
-      }
-    }
-
-    // Also load traditional component if exported (via component:add event)
-    if (moduleExports.default || moduleExports.component) {
-      const ComponentClass = moduleExports.default || moduleExports.component;
-      if (typeof ComponentClass === 'function') {
-        try {
-          const componentClassName = this.manifest?.componentClass || ComponentClass.name;
-          const { ComponentRegistry } = require('../persistence/component-registry');
-          ComponentRegistry.register(componentClassName, ComponentClass);
-          
-          // Build config from URL params
-          const config: any = {
-            ...(this.manifest?.config || {}),
-            ...(this.parsedUrl?.params || {}),
-            _axonMetadata: {
-              axonUrl: this.axonUrl,
-              moduleUrl: this.moduleUrl,
-              manifestUrl: this.manifestUrl
-            }
-          };
-          
-          // Emit component:add - let Maintainer handle instantiation
-          space.emit({
-            topic: 'component:add',
-            source: this.getRef(),
-            payload: {
-              elementId: this.id,
-              componentType: componentClassName,
-              componentClass: 'component',
-              config
-            },
-            timestamp: Date.now()
-          });
-          
-          this.loadedExports.push('component:default');
-          console.log(`[AxonLoader] Emitted component:add for RETM module's component`);
-        } catch (error) {
-          console.error(`[AxonLoader] Failed to emit component:add:`, error);
-        }
-      }
-    }
-    
-    console.log(`[AxonLoader] RETM module loaded successfully. Exports: ${this.loadedExports.join(', ')}`);
+    console.log(`[AxonLoader] Module loaded successfully. Exports: ${this.loadedExports.join(', ')}`);
 
     // Emit module-loaded event for application to handle initialization
     console.log(`[AxonLoader] Emitting axon:module-loaded event for application initialization`);

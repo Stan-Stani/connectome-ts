@@ -63,18 +63,8 @@ export { BaseAfferent } from './components/base-afferent';
 // VEIL Operation Receptor
 export { VEILOperationReceptor } from './spaces/migration-adapters';
 
-// Export FLEX type detection utilities
-export {
-  RETM_TYPE,
-  RETM_TYPES,
-  isModulator,
-  isReceptor,
-  isTransform,
-  isEffector,
-  isMaintainer,
-  isRETMComponent,
-  getRETMInterfaces
-} from './utils/retm-type-guards';
+// Legacy RETM type guards removed - FLEX uses priority-based component ordering
+// Components set their own priority property directly
 
 // Export priority grouping utility
 export { groupByPriority } from './utils/priorities';

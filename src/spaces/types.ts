@@ -31,13 +31,17 @@ export interface ExecutionContext {
 }
 
 /**
- * Element reference that can survive serialization
+ * Component reference that can survive serialization
+ * (Named ElementRef for backwards compatibility)
  */
 export interface ElementRef {
-  elementId: string;
-  elementPath: string[];  // ["root", "discord", "channel-handler"]
+  elementId: string;      // Component ID
+  elementPath: string[];  // Path in component tree, e.g., ["root", "discord"]
   elementType?: string;   // Optional type hint
 }
+
+/** Alias for ElementRef - use in new code */
+export type ComponentRef = ElementRef;
 
 /**
  * Stream reference with metadata
