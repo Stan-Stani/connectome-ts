@@ -19,19 +19,19 @@ export class ControlPanelActionsReceptor extends Component {
 
   execute(context: ExecutionContext): void {
     const event = context.event;
-    if (!event) return;
+    if (!event || event.topic !== 'panel:tools-registered') return;
+
     const payload = event.payload as any;
+    if (!payload || !payload.tools || !Array.isArray(payload.tools)) {
+      console.warn('[ControlPanelActionsReceptor] Invalid payload - missing tools array');
+      return;
+    }
 
     console.log('[ControlPanelActionsReceptor] Panel tools registered:', {
       panelId: payload.panelId,
       elementId: payload.elementId,
-      toolCount: payload.tools?.length || 0
+      toolCount: payload.tools.length
     });
-
-    if (!payload.tools || !Array.isArray(payload.tools)) {
-      console.warn('[ControlPanelActionsReceptor] No tools array in payload');
-      return;
-    }
 
     // Use panelId (e.g. "discord-control") as the tool namespace if available
     // This ensures friendly tool names like "discord-control.open" instead of "elem_123.open"
