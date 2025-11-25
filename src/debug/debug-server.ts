@@ -16,7 +16,6 @@ import { deterministicUUID } from '../utils/uuid';
 import type { Component } from '../spaces/component';
 import type { RenderedContext } from '../hud/types-v2';
 import { serializeVEILState } from '../persistence/serialization';
-import { isAfferent } from '../utils/retm-type-guards';
 
 export interface DebugServerConfig {
   enabled: boolean;
@@ -709,80 +708,11 @@ export class DebugServer {
       });
     });
 
-    // Helper function to detect MARTEM role and gather metadata
-    const getMartemMetadata = (component: Component, space: Space) => {
-      const metadata: any = { martemRole: null };
-
-      // Check modulators
-      if ((space as any).modulators?.includes(component)) {
-        metadata.martemRole = 'Modulator';
-      }
-
-      // Check afferents using type guard
-      if (isAfferent(component)) {
-        metadata.martemRole = 'Afferent';
-        try {
-          const status = component.getStatus();
-          if (status) {
-            metadata.status = status;
-          }
-        } catch (e) {}
-        if (typeof component.getMetrics === 'function') {
-          try {
-            const metrics = component.getMetrics();
-            if (metrics) {
-              metadata.metrics = metrics;
-            }
-          } catch (e) {}
-        }
-      }
-
-      // Check receptors
-      if ((space as any).receptors) {
-        const topics: string[] = [];
-        for (const [topic, receptors] of (space as any).receptors.entries()) {
-          if (receptors.includes(component)) {
-            topics.push(topic);
-          }
-        }
-        if (topics.length > 0) {
-          metadata.martemRole = 'Receptor';
-          metadata.topics = topics;
-        }
-      }
-
-      // Check transforms
-      if ((space as any).transforms?.includes(component)) {
-        metadata.martemRole = 'Transform';
-      }
-
-      // Check effectors
-      if ((space as any).effectors?.includes(component)) {
-        metadata.martemRole = 'Effector';
-      }
-
-      // Check maintainers
-      if ((space as any).maintainers?.includes(component)) {
-        metadata.martemRole = 'Maintainer';
-      }
-
-      if (metadata.martemRole) {
-        if ((component as any).priority !== undefined) {
-          metadata.priority = (component as any).priority;
-        }
-        if ((component as any).facetFilters) {
-          metadata.facetFilters = (component as any).facetFilters;
-        }
-      }
-
-      return metadata;
-    };
-
     this.app.get('/api/state', (_req, res) => {
       try {
         const components = this.space.components || [];
-        
-        // Serialize space structure
+
+        // Serialize space structure with FLEX priority-based ordering
         const spaceInfo = {
           id: this.space.id,
           name: this.space.name,
@@ -791,16 +721,11 @@ export class DebugServer {
             name: c.constructor.name,
             id: c.id || 'unknown',
             priority: (c as any).priority ?? 0,
-            enabled: (c as any).enabled ?? true,
-            ...getMartemMetadata(c, this.space)
+            enabled: (c as any).enabled ?? true
           })),
-          componentCount: components.length,
-          receptorCount: (this.space as any).receptors?.size || 0,
-          effectorCount: (this.space as any).effectors?.length || 0,
-          transformCount: (this.space as any).transforms?.length || 0,
-          maintainerCount: (this.space as any).maintainers?.length || 0
+          componentCount: components.length
         };
-        
+
         res.json({
           space: spaceInfo,
           veil: serializeVEILState(this.veilState.getState()),
