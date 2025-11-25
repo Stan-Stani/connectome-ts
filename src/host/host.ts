@@ -676,40 +676,48 @@ export class ConnectomeHost {
       } catch (e) {}
     }, 1000);
 
-    // Handle AXON V2 format
+    // Handle AXON module format: { components: { Name: Class, ... } }
     let ComponentClass;
     let moduleExportsObject;
 
     if (typeof moduleExports.createModule === 'function') {
       moduleExportsObject = moduleExports.createModule(env);
 
-      if (typeof moduleExportsObject === 'function') {
-        ComponentClass = moduleExportsObject;
-      } else if (moduleExportsObject.component) {
-        ComponentClass = moduleExportsObject.component;
-      } else if (moduleExportsObject.afferents && typeof moduleExportsObject.afferents === 'object') {
-        ComponentClass = moduleExportsObject.afferents[componentType] || Object.values(moduleExportsObject.afferents)[0];
-      }
-    } else {
-      ComponentClass = moduleExports.default || moduleExports.component || moduleExports;
-    }
+      // Look for the requested component type in the components object
+      if (moduleExportsObject.components && typeof moduleExportsObject.components === 'object') {
+        ComponentClass = moduleExportsObject.components[componentType];
 
-    if (typeof ComponentClass === 'function') {
-      // Register with ComponentRegistry
-      ComponentRegistry.register(componentType, ComponentClass);
+        // If not found by exact name, try to find it
+        if (!ComponentClass) {
+          // Search by class name
+          for (const [name, cls] of Object.entries(moduleExportsObject.components)) {
+            if ((cls as any).name === componentType || name === componentType) {
+              ComponentClass = cls;
+              break;
+            }
+          }
+        }
 
-      // Also register receptors if module exports them
-      if (moduleExportsObject && moduleExportsObject.receptors) {
-        for (const [receptorName, ReceptorClass] of Object.entries(moduleExportsObject.receptors)) {
-          if (typeof ReceptorClass === 'function') {
-            ComponentRegistry.register(receptorName, ReceptorClass as any);
+        // Register all components from the module
+        for (const [name, cls] of Object.entries(moduleExportsObject.components)) {
+          if (typeof cls === 'function') {
+            const className = (cls as any).name || name;
+            if (!ComponentRegistry.has(className)) {
+              ComponentRegistry.register(className, cls as any);
+            }
           }
         }
       }
+    }
 
+    if (typeof ComponentClass === 'function') {
+      // Register with ComponentRegistry if not already
+      if (!ComponentRegistry.has(componentType)) {
+        ComponentRegistry.register(componentType, ComponentClass);
+      }
       console.log(`[Host] Registered AXON component: ${componentType}`);
     } else {
-      throw new Error(`Module did not export a valid component class (got ${typeof ComponentClass})`);
+      throw new Error(`Module did not export component '${componentType}' in components object`);
     }
   }
 }
