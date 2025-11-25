@@ -109,12 +109,19 @@ function deserializeFacet(data: any): Facet | null {
           base.transitionRenderers = data.transitionRenderers;
         }
         break;
-        
+
+      case 'component-state':
+        if (data.componentType) base.componentType = data.componentType;
+        if (data.componentClass) base.componentClass = data.componentClass;
+        if (data.componentId) base.componentId = data.componentId;
+        if (data.elementId) base.elementId = data.elementId;
+        break;
+
       case 'tool':
         if (data.toolName) base.toolName = data.toolName;
         if (data.parameters) base.parameters = deserializeValue(data.parameters);
         break;
-        
+
       case 'action':
         if (data.actionTarget) base.actionTarget = data.actionTarget;
         if (data.actionName) base.actionName = data.actionName;
