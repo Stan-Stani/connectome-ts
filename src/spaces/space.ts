@@ -39,6 +39,8 @@ import {
   isModulator 
 } from '../utils/retm-type-guards';
 import { generateId } from './utils';
+import { ComponentOrderingStrategy, PriorityOrderingStrategy } from './ordering/component-ordering';
+import { ComponentConstraintFacet } from './constraints';
 
 /**
  * The root Space that orchestrates the entire system
@@ -125,6 +127,9 @@ export class Space {
 
   // Callbacks to run on next frame
   private nextFrameCallbacks: (() => void)[] = [];
+
+  private componentOrderingStrategy: ComponentOrderingStrategy = new PriorityOrderingStrategy();
+  private componentConstraintFacets: Map<string, ComponentConstraintFacet[]> = new Map();
 
   /**
    * Runtime flag to enable detailed component execution tracing
@@ -238,13 +243,19 @@ export class Space {
     }
 
     this.componentRegistry.set(id, component);
+    this.updateConstraintFacetsForComponent(id, component);
 
     // Mount to Space
     // _attach will call onInit, onMount/onRestore, and auto-register MARTEMs
     // We don't await it here to match synchronous add behavior, but it handles async init internally
-    component._attach(this, id, isRestoring).catch((err: any) => {
-       console.error(`[Space.addComponent] Error attaching component ${id}:`, err);
-    });
+    component
+      ._attach(this, id, isRestoring)
+      .then(() => {
+        this.refreshConstraintFacets();
+      })
+      .catch((err: any) => {
+        console.error(`[Space.addComponent] Error attaching component ${id}:`, err);
+      });
 
     console.log(`[Space.addComponent] Registered ${component.constructor.name} (${id})`);
 
@@ -317,7 +328,27 @@ export class Space {
    * Sort components by priority
    */
   private sortComponents(): void {
-    this.components.sort((a, b) => a.priority - b.priority);
+    const ordered = this.componentOrderingStrategy.order([...this.components]);
+    this.components.splice(0, this.components.length, ...ordered);
+    this.refreshConstraintFacets();
+  }
+
+  private updateConstraintFacetsForComponent(componentId: string, component: Component): void {
+    try {
+      const facets = component.getConstraintFacets().map(facet => ({ ...facet }));
+      this.componentConstraintFacets.set(componentId, facets);
+    } catch (error) {
+      console.warn(
+        `[Space] Failed to capture constraint facets for ${componentId}:`,
+        error
+      );
+    }
+  }
+
+  private refreshConstraintFacets(): void {
+    for (const [componentId, component] of this.componentRegistry.entries()) {
+      this.updateConstraintFacetsForComponent(componentId, component);
+    }
   }
 
   /**
