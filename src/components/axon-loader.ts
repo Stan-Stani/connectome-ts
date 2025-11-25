@@ -68,7 +68,7 @@ export class AxonLoaderComponent extends Component {
   private loadedComponentState?: any;
   
   @persistent()
-  private moduleType: 'component' | 'retm' | 'mixed' = 'component';
+  private moduleType: 'component' | 'flex' | 'mixed' = 'component';
   
   @persistent()
   private loadedExports: string[] = [];
@@ -328,18 +328,15 @@ export class AxonLoaderComponent extends Component {
       
       const moduleCode = await response.text();
       
-      // Check if manifest indicates RETM support
+      // Check if manifest indicates FLEX component exports
       const exports = this.manifest?.exports;
-      const hasRETMExports = exports && (
-        (exports.receptors && exports.receptors.length > 0) ||
-        (exports.effectors && exports.effectors.length > 0) ||
-        (exports.transforms && exports.transforms.length > 0) ||
-        (exports.maintainers && exports.maintainers.length > 0) ||
+      const hasFLEXExports = exports && (
+        (exports.components && exports.components.length > 0) ||
         ((exports as any).afferents && (exports as any).afferents.length > 0)
       );
       
       // Create appropriate environment
-      const env = hasRETMExports ? createAxonEnvironmentV2() : createAxonEnvironment();
+      const env = hasFLEXExports ? createAxonEnvironmentV2() : createAxonEnvironment();
       
       // Load dependencies first
       await this.loadDependencies(env);
@@ -372,14 +369,14 @@ export class AxonLoaderComponent extends Component {
       // Execute the module with the enhanced environment
       moduleFunc(moduleExports, module, enhancedEnv);
       
-      // All modules go through unified RETM loading
-      // Modules can export: { component?, receptors?, effectors?, transforms?, maintainers? }
-      await this.loadRETMModule(module.exports);
-      
+      // All modules go through unified FLEX loading
+      // Modules can export: { component?, components?, afferents? }
+      await this.loadFLEXModule(module.exports);
+
       // Determine module type for metadata
       const hasComponent = module.exports.default || module.exports.component;
-      this.moduleType = hasRETMExports && hasComponent ? 'mixed' : 
-                        hasRETMExports ? 'retm' : 'component';
+      this.moduleType = hasFLEXExports && hasComponent ? 'mixed' :
+                        hasFLEXExports ? 'flex' : 'component';
       
       // Set up hot reload if enabled
       if (this.manifest?.hotReload) {
@@ -443,15 +440,16 @@ export class AxonLoaderComponent extends Component {
   }
   
   /**
-   * Load a RETM module and register its exports
+   * Load a FLEX module and register its exports
+   * Supports both new FLEX style (components) and legacy MARTEM style (receptors, effectors, etc.)
    */
-  private async loadRETMModule(moduleExports: any): Promise<void> {
+  private async loadFLEXModule(moduleExports: any): Promise<void> {
     const space = this.space;
     if (!space) {
-      throw new Error('Cannot load RETM module: component not attached to space');
+      throw new Error('Cannot load FLEX module: component not attached to space');
     }
-    
-    console.log(`[AxonLoader] Loading RETM module with exports:`, Object.keys(moduleExports));
+
+    console.log(`[AxonLoader] Loading FLEX module with exports:`, Object.keys(moduleExports));
     this.loadedExports = [];
 
     // Initialize the module state with URL parameters if an initializer is provided

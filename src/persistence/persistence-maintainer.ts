@@ -1,5 +1,11 @@
-import { ReadonlyVEILState, SpaceEvent, FacetDelta } from '../spaces/receptor-effector-types';
-import { BaseMaintainer } from '../components/base-martem';
+/**
+ * PersistenceMaintainer - Handles persistence of VEIL state
+ *
+ * FLEX Component (priority 400) that runs after all other processing is complete.
+ */
+
+import { Component } from '../spaces/component';
+import { ExecutionContext } from '../spaces/types';
 import { VEILStateManager } from '../veil/veil-state';
 import { FileStorageAdapter } from './file-storage';
 import { FrameDelta, PersistenceSnapshot } from './types';
@@ -13,11 +19,10 @@ export interface PersistenceMaintainerConfig {
   maxDeltasPerFile?: number; // Default: 1000
 }
 
-/**
- * Maintainer that handles persistence of VEIL state
- * Runs in Phase 4 after all other processing is complete
- */
-export class PersistenceMaintainer extends BaseMaintainer {
+export class PersistenceMaintainer extends Component {
+  // FLEX priority: Maintainer level (400) - runs last
+  priority = 400;
+
   private storage: FileStorageAdapter;
   private lastSnapshotSequence: number = 0;
 
@@ -37,79 +42,66 @@ export class PersistenceMaintainer extends BaseMaintainer {
     this.config = config;
     this.storage = new FileStorageAdapter(config.storagePath);
   }
-  
-  async process(frame: Frame, changes: FacetDelta[], state: ReadonlyVEILState): Promise<import('../spaces/receptor-effector-types').MaintainerResult> {
-    // Save the frame delta
-    this.saveDelta(frame, frame.sequence).catch(err => {
+
+  execute(context: ExecutionContext): void {
+    const { frame, state } = context;
+
+    if (!frame) return;
+
+    // Save the frame delta (fire and forget)
+    this.saveDelta(frame as Frame, frame.sequence).catch(err => {
       console.error('[PersistenceMaintainer] Failed to save delta:', err);
     });
-    
+
     // Check if we need a snapshot
     const snapshotInterval = this.config.snapshotInterval || 100;
     const currentSequence = this.veilState.getState().currentSequence;
     if (currentSequence - this.lastSnapshotSequence >= snapshotInterval) {
-      // Snapshot the CURRENT state (which is one frame behind during Phase 4)
       this.createSnapshot(currentSequence).catch(err => {
         console.error('[PersistenceMaintainer] Failed to create snapshot:', err);
       });
       this.lastSnapshotSequence = currentSequence;
     }
-    
-    // Clear element operations after snapshot
-    if (frame.sequence % snapshotInterval === 0) {
-      // Cleanup if needed
-    }
-    
-    return { events: [] }; // No events to emit
   }
-  
+
   private async saveDelta(frame: Frame, sequence: number): Promise<void> {
-    // Create a minimal frame representation for delta storage
-    // We only need deltas, sequence, and timestamp - not events or transition data
     const minimalFrame: Frame = {
       sequence: frame.sequence,
       timestamp: frame.timestamp,
       uuid: frame.uuid,
-      events: [],  // Events not needed for replay
+      events: [],
       deltas: frame.deltas,
       transition: {
         sequence: frame.transition.sequence,
         timestamp: frame.transition.timestamp,
-        elementOps: [],  // Element ops tracked separately
+        elementOps: [],
         componentOps: [],
         componentChanges: [],
         veilOps: []
       }
     };
-    
+
     const delta: FrameDelta = {
       sequence,
       timestamp: frame.timestamp,
-      lifecycleId: this.rootSpace.lifecycleId,  // Tag with current lifecycle
+      lifecycleId: this.rootSpace.lifecycleId,
       frame: minimalFrame
     };
-    
-    // Save using the storage adapter
+
     await this.storage.saveDelta(delta);
   }
-  
-  async createSnapshot(sequence?: number): Promise<void> {
-    // Get the full state
-    const state = this.veilState.getState();
 
-    // Use provided sequence or current sequence
+  async createSnapshot(sequence?: number): Promise<void> {
+    const state = this.veilState.getState();
     const snapshotSequence = sequence !== undefined ? sequence : state.currentSequence;
-    
-    // Serialize Space (replaces element tree)
     const serializedSpace = serializeSpace(this.rootSpace);
-    
-    // Create snapshot
+
     const snapshot: PersistenceSnapshot = {
       version: 1,
       timestamp: new Date().toISOString(),
       sequence: snapshotSequence,
-      lifecycleId: this.rootSpace.lifecycleId,  // Tag with current lifecycle
-      spaceId: this.rootSpace.id,                // Stable Space ID
+      lifecycleId: this.rootSpace.lifecycleId,
+      spaceId: this.rootSpace.id,
       veilState: serializeVEILState(state),
       space: serializedSpace,
       metadata: {
@@ -119,9 +111,7 @@ export class PersistenceMaintainer extends BaseMaintainer {
       }
     };
 
-    // Save snapshot
     await this.storage.saveSnapshot(snapshot);
-
     this.lastSnapshotSequence = snapshotSequence;
     console.log(`[PersistenceMaintainer] Created snapshot at sequence ${snapshotSequence}`);
   }

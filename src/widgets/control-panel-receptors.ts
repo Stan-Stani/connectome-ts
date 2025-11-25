@@ -4,7 +4,8 @@
  * These receptors handle panel events and create VEIL facets declaratively.
  */
 
-import { BaseReceptor } from '../components/base-martem';
+import { Component } from '../spaces/component';
+import type { ExecutionContext } from '../spaces/types';
 import type { VEILDelta } from '../veil/types';
 import type { SpaceEvent } from '../spaces/types';
 
@@ -12,10 +13,13 @@ import type { SpaceEvent } from '../spaces/types';
  * Receptor that creates action-definition and instruction facets
  * when panel tools are registered (declarative pattern)
  */
-export class ControlPanelActionsReceptor extends BaseReceptor {
+export class ControlPanelActionsReceptor extends Component {
+  priority = 100;
   topics = ['panel:tools-registered'];
 
-  transform(event: SpaceEvent, state: any): VEILDelta[] {
+  execute(context: ExecutionContext): void {
+    const event = context.event;
+    if (!event) return;
     const payload = event.payload as any;
 
     console.log('[ControlPanelActionsReceptor] Panel tools registered:', {
@@ -26,17 +30,15 @@ export class ControlPanelActionsReceptor extends BaseReceptor {
 
     if (!payload.tools || !Array.isArray(payload.tools)) {
       console.warn('[ControlPanelActionsReceptor] No tools array in payload');
-      return [];
+      return;
     }
-
-    const deltas: VEILDelta[] = [];
 
     // Use panelId (e.g. "discord-control") as the tool namespace if available
     // This ensures friendly tool names like "discord-control.open" instead of "elem_123.open"
     const targetId = payload.panelId || payload.elementId;
-    
+
     // Create facets for panel control actions (open/close)
-    deltas.push({
+    this.addOperation({
       type: 'addFacet',
       facet: {
         id: `action-def-${payload.elementId}-open`,
@@ -53,7 +55,7 @@ export class ControlPanelActionsReceptor extends BaseReceptor {
       }
     });
 
-    deltas.push({
+    this.addOperation({
       type: 'addFacet',
       facet: {
         id: `tool-instruction-${payload.elementId}-open`,
@@ -63,7 +65,7 @@ export class ControlPanelActionsReceptor extends BaseReceptor {
       }
     });
 
-    deltas.push({
+    this.addOperation({
       type: 'addFacet',
       facet: {
         id: `action-def-${payload.elementId}-close`,
@@ -81,7 +83,7 @@ export class ControlPanelActionsReceptor extends BaseReceptor {
       }
     });
 
-    deltas.push({
+    this.addOperation({
       type: 'addFacet',
       facet: {
         id: `tool-instruction-${payload.elementId}-close`,
@@ -93,11 +95,12 @@ export class ControlPanelActionsReceptor extends BaseReceptor {
     });
 
     // Create facets for each registered tool
+    let facetCount = 4; // Already created 4 facets above
     for (const tool of payload.tools) {
       const toolName = `${targetId}.${tool.name}`;
 
       // Action definition facet
-      deltas.push({
+      this.addOperation({
         type: 'addFacet',
         facet: {
           id: `action-def-${payload.elementId}-${tool.name}`,
@@ -118,11 +121,11 @@ export class ControlPanelActionsReceptor extends BaseReceptor {
       // Instruction facet (renderable to agent)
       // Replace any internal ID references in instructions with friendly ID
       const instructions = tool.instructions.replace(
-        new RegExp(`{@${payload.elementId}\\.`, 'g'), 
+        new RegExp(`{@${payload.elementId}\\.`, 'g'),
         `{@${targetId}.`
       );
 
-      deltas.push({
+      this.addOperation({
         type: 'addFacet',
         facet: {
           id: `tool-instruction-${payload.elementId}-${tool.name}`,
@@ -132,41 +135,42 @@ export class ControlPanelActionsReceptor extends BaseReceptor {
           scope: tool.scope  // Panel-scoped
         }
       });
+
+      facetCount += 2;
     }
 
-    console.log(`[ControlPanelActionsReceptor] Created ${deltas.length} facets for panel ${payload.panelId}`);
-
-    return deltas;
+    console.log(`[ControlPanelActionsReceptor] Created ${facetCount} facets for panel ${payload.panelId}`);
   }
 }
 
 /**
  * Receptor that handles panel scope activation/deactivation
  */
-export class PanelScopeReceptor extends BaseReceptor {
+export class PanelScopeReceptor extends Component {
+  priority = 100;
   topics = ['panel:scope-change'];
 
-  transform(event: SpaceEvent, state: any): VEILDelta[] {
+  execute(context: ExecutionContext): void {
+    const event = context.event;
+    if (event.topic !== 'panel:scope-change') return;
+
     const { scope, active } = event.payload as any;
     const scopeFacetId = `scope-${scope}`;
+    const state = context.state;
 
     console.log(`[PanelScopeReceptor] ${active ? 'Activating' : 'Deactivating'} scope: ${scope}`);
 
     // Check if scope facet already exists
-    const existingFacet = state.hasFacet(scopeFacetId);
+    const existingFacet = state.facets.has(scopeFacetId);
 
     if (existingFacet) {
-      // Update existing scope facet
-      return [{
+      this.addOperation({
         type: 'rewriteFacet',
         id: scopeFacetId,
-        changes: {
-          state: { active }
-        }
-      }];
+        changes: { state: { active } }
+      });
     } else {
-      // Create new scope facet
-      return [{
+      this.addOperation({
         type: 'addFacet',
         facet: {
           id: scopeFacetId,
@@ -174,7 +178,7 @@ export class PanelScopeReceptor extends BaseReceptor {
           scope: [scope],
           state: { active }
         } as any
-      }];
+      });
     }
   }
 }

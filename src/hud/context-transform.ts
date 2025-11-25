@@ -1,13 +1,13 @@
 /**
  * ContextTransform - A Transform that renders context for agent activations
- * 
- * This is the new architecture version of FrameTrackingHUD.
- * It runs during frame processing and creates ephemeral
+ *
+ * FLEX Component (priority 200) that runs during frame processing and creates
  * rendered-context facets for any pending agent activations.
  */
 
-import { BaseTransform } from '../components/base-martem';
-import { Transform, ReadonlyVEILState } from '../spaces/receptor-effector-types';
+import { Component } from '../spaces/component';
+import { ExecutionContext } from '../spaces/types';
+import { ReadonlyVEILState } from '../spaces/receptor-effector-types';
 import { Facet, hasStateAspect, VEILDelta } from '../veil/types';
 import { FrameTrackingHUD } from './frame-tracking-hud';
 import { CompressionEngine } from '../compression/types-v2';
@@ -19,10 +19,9 @@ export interface ContextTransformConfig {
   defaultOptions?: Partial<HUDConfig>;
 }
 
-export class ContextTransform extends BaseTransform {
-  // Priority: Inherits 200 from BaseTransform, which runs after Receptors (100) but before Effectors (300)
-  // This ensures activation facets are visible when rendering context
-  // TODO [constraint-solver]: Replace with requires = ['agent-activation']
+export class ContextTransform extends Component {
+  // FLEX priority: Transform level (200) - after Receptors (100), before Effectors (300)
+  priority = 200;
 
   private hud: FrameTrackingHUD;
   private compressionEngine?: CompressionEngine;
@@ -34,11 +33,20 @@ export class ContextTransform extends BaseTransform {
     this.defaultOptions = config.defaultOptions;
     this.hud = new FrameTrackingHUD();
   }
-  
-  process(state: ReadonlyVEILState): VEILDelta[] {
-    const deltas: VEILDelta[] = [];
 
-    console.log(`[ContextTransform] process() called with ${state.facets.size} facets`);
+  /**
+   * FLEX execute method - processes frame context for agent activations
+   */
+  execute(context: ExecutionContext): void {
+    const { state } = context;
+    this.processActivations(state);
+  }
+
+  /**
+   * Process activation facets and render context for them
+   */
+  private processActivations(state: ReadonlyVEILState): void {
+    console.log(`[ContextTransform] processActivations() called with ${state.facets.size} facets`);
 
     // Find activation facets that need context
     for (const [id, facet] of state.facets) {
@@ -102,11 +110,9 @@ export class ContextTransform extends BaseTransform {
         );
         
         // Store the full rendered context object in state
-        // The agent needs the message array with roles
         const contextFacetId = `context-${id}-${Date.now()}`;
-        // console.log(`[ContextTransform] Creating rendered-context facet: ${contextFacetId}`);
-        
-        deltas.push({
+
+        this.addOperation({
           type: 'addFacet',
           facet: {
             id: contextFacetId,
@@ -114,18 +120,12 @@ export class ContextTransform extends BaseTransform {
             state: {
               activationId: id,
               tokenCount: context.metadata.totalTokens,
-              context: context // Store the full RenderedContext object
+              context: context
             }
-            // Not ephemeral - valuable for debugging what context agent saw
           }
         });
-        
-        // console.log(`[ContextTransform] Rendered context with ${context.metadata.totalTokens} tokens for activation ${id}`);
       }
     }
-    
-    // console.log(`[ContextTransform] Returning ${deltas.length} deltas`);
-    return deltas;
   }
   
   private buildAgentOptions(activationState: Record<string, any>): HUDConfig {

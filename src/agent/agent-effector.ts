@@ -1,17 +1,15 @@
 /**
  * AgentEffector - Processes agent activations and rendered contexts to produce responses
- * 
- * This replaces AgentComponent in the new Receptor/Effector architecture.
- * It watches for both agentActivation facets and their corresponding 
- * rendered-context facets, then runs the agent to produce speech/action/thought facets.
+ *
+ * FLEX Component (priority 300) that watches for agent-activation and rendered-context
+ * facets, then runs the agent to produce speech/action/thought facets.
  */
 
-import { BaseEffector } from '../components/base-martem';
-import { 
-  Effector, 
-  FacetDelta, 
-  ReadonlyVEILState, 
-  EffectorResult,
+import { Component } from '../spaces/component';
+import { ExecutionContext } from '../spaces/types';
+import {
+  FacetDelta,
+  ReadonlyVEILState,
   FacetFilter,
   ExternalAction
 } from '../spaces/receptor-effector-types';
@@ -30,7 +28,10 @@ import { LLMProvider } from '../llm/llm-interface';
 import { getGlobalTracer, TraceStorage } from '../tracing';
 import { RenderedContext } from '../hud/types-v2';
 
-export class AgentEffector extends BaseEffector {
+export class AgentEffector extends Component {
+  // FLEX priority: Effector level (300)
+  priority = 300;
+
   // Watch for activation facets AND their rendered contexts
   facetFilters: FacetFilter[] = [
     { type: 'agent-activation' },
@@ -44,11 +45,96 @@ export class AgentEffector extends BaseEffector {
 
   onMount(): void {
     this.tracer = getGlobalTracer();
-    // Agent lookup is lazy - happens in process() when first needed
+    // Agent lookup is lazy - happens in execute() when first needed
+  }
+
+  /**
+   * FLEX execute method - processes frame context for agent activations
+   */
+  execute(context: ExecutionContext): void {
+    const { state, frame } = context;
+
+    // Build changes from frame deltas
+    const changes: FacetDelta[] = [];
+    if (frame && frame.deltas) {
+      for (const delta of frame.deltas) {
+        if (delta.type === 'addFacet') {
+          changes.push({ type: 'added', facet: delta.facet });
+        }
+      }
+    }
+
+    if (changes.length === 0) return;
+
+    // Process asynchronously (fire and forget for effector pattern)
+    this.processChanges(changes, state);
+  }
+
+  /**
+   * Process facet changes - look for activations with rendered contexts
+   */
+  private async processChanges(changes: FacetDelta[], state: ReadonlyVEILState): Promise<void> {
+    const events: any[] = [];
+    const externalActions: ExternalAction[] = [];
+
+    // Lazy agent lookup
+    this.findAgent();
+
+    if (!this.agent) {
+      return;
+    }
+
+    // Check for new activations that have rendered contexts
+    for (const change of changes) {
+      if (change.type !== 'added') continue;
+
+      if (change.facet.type === 'agent-activation') {
+        const activationId = change.facet.id;
+        const activationState = hasStateAspect(change.facet)
+          ? (change.facet.state as Record<string, any>)
+          : {};
+
+        if (this.processingActivations.has(activationId)) continue;
+
+        const targetAgentId = activationState.targetAgentId as string | undefined;
+        const isTargeted = !targetAgentId || targetAgentId === this.getAgentId();
+        if (!isTargeted) continue;
+
+        const flattenedActivation = {
+          ...activationState,
+          ...(activationState.metadata || {})
+        };
+
+        const veilState = state as any;
+        if (!this.agent.shouldActivate(flattenedActivation, veilState)) {
+          continue;
+        }
+
+        const contextFacet = Array.from(state.facets.values()).find(f =>
+          f.type === 'rendered-context' &&
+          hasStateAspect(f) &&
+          (f.state as Record<string, any>).activationId === activationId
+        );
+
+        if (!contextFacet || !hasStateAspect(contextFacet)) {
+          continue;
+        }
+
+        this.processingActivations.add(activationId);
+
+        const streamRef = flattenedActivation.streamRef as StreamRef | undefined;
+        const streamId = streamRef?.streamId ?? (flattenedActivation.streamId as string | undefined) ?? 'default';
+
+        const contextState = contextFacet.state as { context: RenderedContext };
+        const context = contextState.context;
+
+        this.runAgentCycleBackground(context, streamRef, activationId, streamId);
+      }
+    }
   }
 
   private findAgent(): void {
-    if (this.agent) return; // Already found
+    if (this.agent) return;
 
     // Config properties are set via Object.assign, read them directly
     const space = this.space;
@@ -100,98 +186,6 @@ export class AgentEffector extends BaseEffector {
     }
   }
   
-  async process(changes: FacetDelta[], state: ReadonlyVEILState): Promise<EffectorResult> {
-    const events: SpaceEvent[] = [];
-    const externalActions: ExternalAction[] = [];
-
-    // Lazy agent lookup - find it the first time we need it
-    this.findAgent();
-
-    // Skip if agent not initialized yet
-    if (!this.agent) {
-      return { events, externalActions };
-    }
-
-    // Check for new activations that have rendered contexts
-    for (const change of changes) {
-      if (change.type !== 'added') continue;
-
-      if (change.facet.type === 'agent-activation') {
-
-        const activationId = change.facet.id;
-        const activationState = hasStateAspect(change.facet)
-          ? (change.facet.state as Record<string, any>)
-          : {};
-
-        // Skip if already processing
-        if (this.processingActivations.has(activationId)) continue;
-
-        // Check if this activation targets this agent
-        const targetAgentId = activationState.targetAgentId as string | undefined;
-        const agentState = this.agent.getState();
-
-        // Basic targeting logic (can be enhanced)
-        const isTargeted = !targetAgentId || targetAgentId === this.getAgentId();
-        if (!isTargeted) continue;
-
-        // Flatten metadata into activation state for shouldActivate compatibility
-        // createAgentActivation nests extra fields under metadata, but shouldActivate expects them at top level
-        const flattenedActivation = {
-          ...activationState,
-          ...(activationState.metadata || {})
-        };
-
-        // Check if agent should activate
-        // Convert ReadonlyVEILState to VEILState for legacy agent interface
-        const veilState = state as any;
-        if (!this.agent.shouldActivate(flattenedActivation, veilState)) {
-          continue;
-        }
-
-        // Look for corresponding rendered context
-        const contextFacet = Array.from(state.facets.values()).find(f => 
-          f.type === 'rendered-context' &&
-          hasStateAspect(f) &&
-          (f.state as Record<string, any>).activationId === activationId
-        );
-
-        if (!contextFacet || !hasStateAspect(contextFacet)) {
-          // No context yet, will process in next frame
-          continue;
-        }
-
-        // Mark as processing
-        this.processingActivations.add(activationId);
-
-        // Use flattened activation for streamRef/streamId access (may be in metadata)
-        const streamRef = flattenedActivation.streamRef as StreamRef | undefined;
-        const streamId = streamRef?.streamId ?? (flattenedActivation.streamId as string | undefined) ?? 'default';
-
-        // Get the context from the state
-        const contextState = contextFacet.state as { context: RenderedContext };
-        const context = contextState.context;
-
-        // Rendered context is in VEIL as rendered-context facet
-        // Debug API reads it from there (no need to duplicate)
-
-        // Start agent cycle in background (fire-and-forget)
-        // This allows the frame to complete immediately, enabling other effectors
-        // to react to the activation (e.g., sending typing indicators) before agent completes
-        this.runAgentCycleBackground(
-          context,
-          streamRef,
-          activationId,
-          streamId
-        );
-      }
-    }
-    
-    return {
-      events,
-      externalActions
-    };
-  }
-
   /**
    * Runs the agent cycle in the background (fire-and-forget).
    * Emits response events when complete, allowing the current frame to finish immediately.

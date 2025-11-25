@@ -54,21 +54,16 @@ export { ComponentStateReceptor } from './spaces/component-state-receptor';
 // Component base type export
 export * from './types/component';
 
-// MARTEM exports (Modulator/Afferent/Receptor/Transform/Effector/Maintainer)
+// FLEX component types and interfaces
 export * from './spaces/receptor-effector-types';
 
-// Base MARTEM implementations
-export * from './components/base-martem';
+// Base Afferent for external service integration
 export { BaseAfferent } from './components/base-afferent';
 
-// Migration adapters
-export {
-  VEILOperationReceptor,
-  ComponentToReceptorAdapter,
-  ComponentToEffectorAdapter
-} from './spaces/migration-adapters';
+// VEIL Operation Receptor
+export { VEILOperationReceptor } from './spaces/migration-adapters';
 
-// Export RETM type detection utilities
+// Export FLEX type detection utilities
 export {
   RETM_TYPE,
   RETM_TYPES,

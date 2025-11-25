@@ -1,79 +1,70 @@
 /**
- * Extended AXON Interfaces for RETM Support
+ * Extended AXON Interfaces for FLEX Architecture
  */
 
 import { IAxonManifest, IAxonEnvironment } from '@connectome/axon-interfaces';
 
 /**
- * Extended manifest for RETM modules
+ * Extended manifest for FLEX modules
  */
 export interface IAxonManifestV2 extends IAxonManifest {
-  // New fields for RETM exports
+  // Fields for component exports
   exports?: {
-    components?: string[];      // Component class names
-    receptors?: string[];       // Receptor class/function names
-    effectors?: string[];       // Effector class names
-    transforms?: string[];      // Transform class/function names
-    maintainers?: string[];     // Maintainer class names
+    components?: string[];      // Component class names (all extend Component with priority)
   };
-  
+
   // Metadata for each export
   metadata?: {
     [exportName: string]: {
       description?: string;
-      topics?: string[];        // For Receptors
-      facetFilters?: any[];     // For Effectors
+      priority?: number;        // FLEX priority (100=receptor, 200=transform, 300=effector, 400=maintainer)
+      topics?: string[];        // For event-handling components
+      facetFilters?: any[];     // For facet-watching components
       requirements?: string[];  // External dependencies needed
     };
   };
 }
 
 /**
- * Module exports structure for RETM modules
+ * Module exports structure for FLEX modules
  */
-export interface IAxonRETMExports {
+export interface IAxonFLEXExports {
   // Traditional component (optional)
   default?: any;
   component?: any;
-  
-  // RETM exports
-  receptors?: Record<string, any>;
-  effectors?: Record<string, any>;
-  transforms?: Record<string, any>;
-  maintainers?: Record<string, any>;
+
+  // FLEX components by role (all extend Component with explicit priority)
+  components?: Record<string, any>;
 }
 
+// Legacy alias for backwards compatibility
+export type IAxonRETMExports = IAxonFLEXExports;
+
 /**
- * Extended AXON Environment with RETM support
+ * Extended AXON Environment with FLEX support
+ *
+ * FLEX Components should extend Component with explicit priority:
+ * - priority 100: Receptor-level (event → facet transformation)
+ * - priority 200: Transform-level (facet processing)
+ * - priority 300: Effector-level (side effects, external interactions)
+ * - priority 400: Maintainer-level (cleanup, persistence)
  */
 export interface IAxonEnvironmentV2 extends IAxonEnvironment {
   // Component base classes
   ControlPanelComponent: any;
   BaseAfferent: any;
 
-  // RETM base component classes (for creating RETM components in AXON modules)
-  BaseReceptor: any;
-  BaseEffector: any;
-  BaseTransform: any;
-  BaseMaintainer: any;
-
-  // Control Panel receptors (built-in, ready to use)
+  // Control Panel receptors (built-in FLEX components)
   ControlPanelActionsReceptor: any;
   PanelScopeReceptor: any;
-  
-  // RETM interfaces (for type checking)
-  Receptor: any;
-  Effector: any;
-  Transform: any;
-  Maintainer: any;
-  
+
   // Helper types
   VEILDelta: any;
   FacetDelta: any;
   ReadonlyVEILState: any;
   EffectorResult: any;
   ExternalAction: any;
-  
+
   // Facet types
   Facet: any;
   EventFacet: any;
@@ -81,7 +72,7 @@ export interface IAxonEnvironmentV2 extends IAxonEnvironment {
   StateFacet: any;
   ThoughtFacet: any;
   ActionFacet: any;
-  
+
   // Factory functions
   createEventFacet: any;
   createSpeechFacet: any;
@@ -90,7 +81,7 @@ export interface IAxonEnvironmentV2 extends IAxonEnvironment {
   createActionFacet: any;
   createAmbientFacet: any;
   createAgentActivation: any;
-  
+
   // Helper functions
   hasFacet: (state: any, id: string) => boolean;
   getFacetsByType: (state: any, type: string) => any[];

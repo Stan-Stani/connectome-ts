@@ -1,13 +1,15 @@
 /**
  * ContinuationTransform - Handles tag-based continuations
- * 
- * This transform watches for continuation:complete facets and triggers
- * subsequent actions based on matching continuation tags.
+ *
+ * FLEX Component (priority 200 - Transform level) that watches for
+ * continuation:complete facets and triggers subsequent actions based
+ * on matching continuation tags.
  */
 
-import { Transform, ReadonlyVEILState } from '../spaces/receptor-effector-types';
-import { BaseTransform } from '../components/base-martem';
-import { 
+import { Component } from '../spaces/component';
+import { ExecutionContext } from '../spaces/types';
+import { ReadonlyVEILState } from '../spaces/receptor-effector-types';
+import {
   Facet,
   ContinuationCompleteFacet,
   AgentActivationFacet,
@@ -15,27 +17,28 @@ import {
 } from '../veil/facet-types';
 import { VEILDelta } from '../veil/types';
 
-export class ContinuationTransform extends BaseTransform implements Transform {
-  
-  facetFilters = undefined;  // Process all facets
+export class ContinuationTransform extends Component {
+  // FLEX priority: Transform level (200)
+  priority = 200;
 
-  // mount/unmount implementation is handled by BaseTransform -> Component class
-  
-  process(state: ReadonlyVEILState): VEILDelta[] {
-    const deltas: VEILDelta[] = [];
-    
+  execute(context: ExecutionContext): void {
+    const { state } = context;
+    this.processContinuations(state);
+  }
+
+  private processContinuations(state: ReadonlyVEILState): void {
     // Process continuation completions
     for (const [id, facet] of state.facets) {
       if (facet.type === 'continuation:complete') {
         const completion = facet as ContinuationCompleteFacet;
         const { success, result, error, continuations } = completion.state;
-        
+
         // Process any explicit continuations
         if (continuations && continuations.length > 0) {
           for (const continuation of continuations) {
             // Check condition
             if (this.shouldExecuteContinuation(continuation, success)) {
-              
+
               // Create the specified facet
               const newFacet = this.createFacetFromSpec(
                 continuation.facetType,
@@ -43,24 +46,22 @@ export class ContinuationTransform extends BaseTransform implements Transform {
                 result,
                 completion.state.continuationTag
               );
-              
-              deltas.push({
+
+              this.addOperation({
                 type: 'addFacet',
                 facet: newFacet
               });
             }
           }
-          
+
           // Remove the continuation:complete facet so it's not processed again
-          deltas.push({
+          this.addOperation({
             type: 'removeFacet',
             id
           });
         }
       }
     }
-    
-    return deltas;
   }
   
   private shouldExecuteContinuation(continuation: any, success: boolean): boolean {

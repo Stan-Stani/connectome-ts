@@ -1,6 +1,7 @@
-import { BaseMaintainer } from '../components/base-martem';
-import { SpaceEvent, MaintainerResult } from './receptor-effector-types';
-import { Frame, ReadonlyVEILState } from '../veil/types';
+import { Component } from './component';
+import { ExecutionContext } from './types';
+import { SpaceEvent, FacetDelta } from './receptor-effector-types';
+import { ReadonlyVEILState, ReadonlyFrame } from '../veil/types';
 import { ComponentRegistry } from '../persistence/component-registry';
 import { Space } from './space';
 import { join, dirname } from 'path';
@@ -11,7 +12,7 @@ import { ComponentStateFacet } from '../veil/facet-types';
 /**
  * ComponentManager: Instantiates components from component-state facets
  *
- * Priority: 400 (Maintainer phase)
+ * FLEX Component (priority 400 - Maintainer level)
  *
  * VEIL-first component instantiation:
  * 1. ComponentStateReceptor (priority 100) creates component-state facets
@@ -21,11 +22,24 @@ import { ComponentStateFacet } from '../veil/facet-types';
  * This maintains VEIL as the single source of truth for component lifecycle.
  * Both fresh starts and restoration work the same way: read facets, create components.
  */
-export class ComponentManager extends BaseMaintainer {
+export class ComponentManager extends Component {
+  // FLEX priority: Maintainer level (400)
+  priority = 400;
+
   // Track which component-state facets we've already instantiated
   private instantiatedComponents = new Set<string>();
 
-  async process(frame: Frame, changes: import('../spaces/receptor-effector-types').FacetDelta[], state: ReadonlyVEILState): Promise<MaintainerResult> {
+  execute(context: ExecutionContext): void {
+    const { frame, state } = context;
+    if (!frame) return;
+
+    // Process asynchronously (fire and forget)
+    this.processComponents(frame, state).catch(err => {
+      console.error('[ComponentManager] Error processing components:', err);
+    });
+  }
+
+  private async processComponents(frame: ReadonlyFrame, state: ReadonlyVEILState): Promise<void> {
     const events: SpaceEvent[] = [];
 
     // Find all component-state facets that need instantiation
@@ -44,7 +58,10 @@ export class ComponentManager extends BaseMaintainer {
       }
     }
 
-    return { events };
+    // Emit collected events directly via space (async processing)
+    for (const event of events) {
+      this.space.emit(event);
+    }
   }
 
   /**
