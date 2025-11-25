@@ -192,6 +192,64 @@ export const App = {
       });
     });
 
+    // Group components preserving execution order, collapsing consecutive inactive components
+    const groupedComponents = computed(() => {
+      const ops = componentOperations.value;
+      const groups = [];
+      let inactiveBuffer = [];
+
+      for (let i = 0; i < ops.length; i++) {
+        const comp = ops[i];
+        const isActive = comp.deltaCount > 0 || comp.emittedEvents > 0;
+
+        if (isActive) {
+          // Flush inactive buffer first
+          if (inactiveBuffer.length > 0) {
+            if (inactiveBuffer.length === 1) {
+              // Single inactive: show directly but grayed out
+              groups.push({ type: 'single-inactive', component: inactiveBuffer[0] });
+            } else {
+              // Multiple inactive: create collapsible group
+              groups.push({ type: 'inactive-group', components: inactiveBuffer, count: inactiveBuffer.length });
+            }
+            inactiveBuffer = [];
+          }
+          // Add active component
+          groups.push({ type: 'active', component: comp });
+        } else {
+          // Buffer inactive component
+          inactiveBuffer.push(comp);
+        }
+      }
+
+      // Flush remaining inactive buffer at end
+      if (inactiveBuffer.length > 0) {
+        if (inactiveBuffer.length === 1) {
+          groups.push({ type: 'single-inactive', component: inactiveBuffer[0] });
+        } else {
+          groups.push({ type: 'inactive-group', components: inactiveBuffer, count: inactiveBuffer.length });
+        }
+      }
+
+      return groups;
+    });
+
+    const expandedInactiveGroups = ref(new Set());
+
+    function toggleInactiveGroup(groupIndex) {
+      if (expandedInactiveGroups.value.has(groupIndex)) {
+        expandedInactiveGroups.value.delete(groupIndex);
+      } else {
+        expandedInactiveGroups.value.add(groupIndex);
+      }
+      // Trigger reactivity
+      expandedInactiveGroups.value = new Set(expandedInactiveGroups.value);
+    }
+
+    function isInactiveGroupExpanded(groupIndex) {
+      return expandedInactiveGroups.value.has(groupIndex);
+    }
+
     // Methods
     function setDetail(detail) {
       state.activeDetail = detail;
@@ -694,6 +752,10 @@ export const App = {
       },
       toggleTracing: () => api.setTracingEnabled(!state.tracingEnabled),
       componentOperations,
+      groupedComponents,
+      expandedInactiveGroups,
+      toggleInactiveGroup,
+      isInactiveGroupExpanded,
       expandedComponents,
       toggleComponentDetail,
       isComponentDetailExpanded
@@ -1083,22 +1145,24 @@ export const App = {
                 <div class="section">
                   <h3>Component Executions & Operations</h3>
                   <div class="log-viewer operations">
-                    <div v-if="componentOperations.length === 0" class="text-muted">No operations.</div>
-                    <template v-for="(compOps, compIdx) in componentOperations" :key="compIdx">
-                      <div class="component-ops-group">
+                    <div v-if="groupedComponents.length === 0" class="text-muted">No operations.</div>
+                    <template v-for="(group, groupIdx) in groupedComponents" :key="groupIdx">
+                      <!-- Active component -->
+                      <template v-if="group.type === 'active'">
+                        <div class="component-ops-group has-activity">
                         <div class="component-ops-header" style="display: flex; align-items: center; cursor: pointer;">
-                          <span class="component-name" @click="toggleComponentDetail(compOps.componentId)" style="flex: 1;">
-                            <span class="expand-icon">{{ isComponentDetailExpanded(compOps.componentId) ? '▼' : '▶' }}</span>
-                            {{ compOps.componentName }}
+                          <span class="component-name" @click="toggleComponentDetail(group.component.componentId)" style="flex: 1;">
+                            <span class="expand-icon">{{ isComponentDetailExpanded(group.component.componentId) ? '▼' : '▶' }}</span>
+                            {{ group.component.componentName }}
                           </span>
                           <span class="component-stats">
-                            <span v-if="compOps.deltaCount > 0" class="stat">{{ compOps.deltaCount }} ops</span>
-                            <span v-if="compOps.durationMs !== undefined" class="stat">{{ compOps.durationMs.toFixed(1) }}ms</span>
-                            <span v-if="compOps.emittedEvents > 0" class="stat">{{ compOps.emittedEvents }} events</span>
-                            <span v-if="compOps.error" class="stat error">ERROR</span>
+                            <span v-if="group.component.deltaCount > 0" class="stat">{{ group.component.deltaCount }} ops</span>
+                            <span v-if="group.component.durationMs !== undefined" class="stat">{{ group.component.durationMs.toFixed(1) }}ms</span>
+                            <span v-if="group.component.emittedEvents > 0" class="stat">{{ group.component.emittedEvents }} events</span>
+                            <span v-if="group.component.error" class="stat error">ERROR</span>
                             <button
-                              v-if="compOps.componentSnapshot"
-                              @click.stop="inspectComponent(compOps.componentSnapshot)"
+                              v-if="group.component.componentSnapshot"
+                              @click.stop="inspectComponent(group.component.componentSnapshot)"
                               class="component-inspect-btn"
                               title="Inspect component details"
                             >🔍</button>
@@ -1106,21 +1170,21 @@ export const App = {
                         </div>
 
                         <!-- Detailed execution info (expandable) -->
-                        <div v-if="isComponentDetailExpanded(compOps.componentId)" class="component-execution-detail">
+                        <div v-if="isComponentDetailExpanded(group.component.componentId)" class="component-execution-detail">
                           <!-- Input Context -->
-                          <div v-if="compOps.context" class="execution-section">
+                          <div v-if="group.component.context" class="execution-section">
                             <h4>Input Context</h4>
-                            <div class="context-item" v-if="compOps.context.inputEvent">
-                              <strong>Event:</strong> {{ compOps.context.inputEvent.topic }}
-                              <pre v-if="compOps.context.inputEvent.payload">{{ JSON.stringify(compOps.context.inputEvent.payload, null, 2) }}</pre>
+                            <div class="context-item" v-if="group.component.context.inputEvent">
+                              <strong>Event:</strong> {{ group.component.context.inputEvent.topic }}
+                              <pre v-if="group.component.context.inputEvent.payload">{{ JSON.stringify(group.component.context.inputEvent.payload, null, 2) }}</pre>
                             </div>
-                            <div class="context-item" v-if="compOps.context.stateSnapshot">
-                              <strong>State:</strong> {{ compOps.context.stateSnapshot.facetCount }} facets at sequence {{ compOps.context.stateSnapshot.sequence }}
+                            <div class="context-item" v-if="group.component.context.stateSnapshot">
+                              <strong>State:</strong> {{ group.component.context.stateSnapshot.facetCount }} facets at sequence {{ group.component.context.stateSnapshot.sequence }}
                             </div>
-                            <div class="context-item" v-if="compOps.context.eventBufferSnapshot">
-                              <strong>Event Buffer:</strong> {{ compOps.context.eventBufferSnapshot.length }} queued events
-                              <div v-if="compOps.context.eventBufferSnapshot.length > 0" style="margin-top: 4px;">
-                                <div v-for="(bufEvt, bufIdx) in compOps.context.eventBufferSnapshot" :key="bufIdx" class="buffer-event-item">
+                            <div class="context-item" v-if="group.component.context.eventBufferSnapshot">
+                              <strong>Event Buffer:</strong> {{ group.component.context.eventBufferSnapshot.length }} queued events
+                              <div v-if="group.component.context.eventBufferSnapshot.length > 0" style="margin-top: 4px;">
+                                <div v-for="(bufEvt, bufIdx) in group.component.context.eventBufferSnapshot" :key="bufIdx" class="buffer-event-item">
                                   <span style="font-size: 0.68rem; color: var(--text-muted);">{{ bufIdx + 1 }}.</span>
                                   <strong>{{ bufEvt.topic }}</strong>
                                   <pre v-if="bufEvt.payload">{{ JSON.stringify(bufEvt.payload, null, 2) }}</pre>
@@ -1130,31 +1194,28 @@ export const App = {
                           </div>
 
                           <!-- Emitted Events -->
-                          <div v-if="compOps.emittedEventDetails && compOps.emittedEventDetails.length > 0" class="execution-section">
-                            <h4>Emitted Events ({{ compOps.emittedEventDetails.length }})</h4>
-                            <div v-for="(evt, evtIdx) in compOps.emittedEventDetails" :key="evtIdx" class="emitted-event-item">
+                          <div v-if="group.component.emittedEventDetails && group.component.emittedEventDetails.length > 0" class="execution-section">
+                            <h4>Emitted Events ({{ group.component.emittedEventDetails.length }})</h4>
+                            <div v-for="(evt, evtIdx) in group.component.emittedEventDetails" :key="evtIdx" class="emitted-event-item">
                               <strong>{{ evt.topic }}</strong>
                               <pre v-if="evt.payload">{{ JSON.stringify(evt.payload, null, 2) }}</pre>
                             </div>
                           </div>
 
                           <!-- Operations Summary -->
-                          <div v-if="compOps.deltaCount > 0" class="execution-section">
-                            <h4>Operations ({{ compOps.deltaCount }})</h4>
+                          <div v-if="group.component.deltaCount > 0" class="execution-section">
+                            <h4>Operations ({{ group.component.deltaCount }})</h4>
                             <div class="text-muted">See below for detailed operations</div>
                           </div>
 
                           <!-- Error Details -->
-                          <div v-if="compOps.error" class="execution-section error-section">
+                          <div v-if="group.component.error" class="execution-section error-section">
                             <h4>Error</h4>
-                            <pre>{{ compOps.error }}</pre>
+                            <pre>{{ group.component.error }}</pre>
                           </div>
                         </div>
 
-                        <template v-if="compOps.deltaCount === 0">
-                          <div class="text-muted" style="padding: 8px 16px; font-size: 0.9em;">(no operations)</div>
-                        </template>
-                        <template v-else v-for="(op, idx) in compOps.operations" :key="idx">
+                        <template v-for="(op, idx) in group.component.operations" :key="idx">
                           <div v-if="op.type === 'addFacet' && op.facet" class="log-entry facet-entry">
                             <div class="facet-header" @click="selectOperation(op, idx)">
                               <span class="log-type">{{ op.type }}</span>
@@ -1190,6 +1251,122 @@ export const App = {
                           </div>
                         </template>
                       </div>
+                      </template>
+
+                      <!-- Single inactive component (grayed out, same structure as active) -->
+                      <template v-else-if="group.type === 'single-inactive'">
+                        <div class="component-ops-group inactive-component">
+                        <div class="component-ops-header" style="display: flex; align-items: center; cursor: pointer;">
+                          <span class="component-name" @click="toggleComponentDetail(group.component.componentId)" style="flex: 1;">
+                            <span class="expand-icon">{{ isComponentDetailExpanded(group.component.componentId) ? '▼' : '▶' }}</span>
+                            {{ group.component.componentName }}
+                          </span>
+                          <span class="component-stats">
+                            <span class="stat">no activity</span>
+                            <span v-if="group.component.durationMs !== undefined" class="stat">{{ group.component.durationMs.toFixed(1) }}ms</span>
+                            <button
+                              v-if="group.component.componentSnapshot"
+                              @click.stop="inspectComponent(group.component.componentSnapshot)"
+                              class="component-inspect-btn"
+                              title="Inspect component details"
+                            >🔍</button>
+                          </span>
+                        </div>
+
+                        <!-- Detailed execution info (expandable) -->
+                        <div v-if="isComponentDetailExpanded(group.component.componentId)" class="component-execution-detail">
+                          <!-- Input Context -->
+                          <div v-if="group.component.context" class="execution-section">
+                            <h4>Input Context</h4>
+                            <div class="context-item" v-if="group.component.context.inputEvent">
+                              <strong>Event:</strong> {{ group.component.context.inputEvent.topic }}
+                              <pre v-if="group.component.context.inputEvent.payload">{{ JSON.stringify(group.component.context.inputEvent.payload, null, 2) }}</pre>
+                            </div>
+                            <div class="context-item" v-if="group.component.context.stateSnapshot">
+                              <strong>State:</strong> {{ group.component.context.stateSnapshot.facetCount }} facets at sequence {{ group.component.context.stateSnapshot.sequence }}
+                            </div>
+                            <div class="context-item" v-if="group.component.context.eventBufferSnapshot">
+                              <strong>Event Buffer:</strong> {{ group.component.context.eventBufferSnapshot.length }} queued events
+                              <div v-if="group.component.context.eventBufferSnapshot.length > 0" style="margin-top: 4px;">
+                                <div v-for="(bufEvt, bufIdx) in group.component.context.eventBufferSnapshot" :key="bufIdx" class="buffer-event-item">
+                                  <span style="font-size: 0.68rem; color: var(--text-muted);">{{ bufIdx + 1 }}.</span>
+                                  <strong>{{ bufEvt.topic }}</strong>
+                                  <pre v-if="bufEvt.payload">{{ JSON.stringify(bufEvt.payload, null, 2) }}</pre>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <!-- No operations message -->
+                          <div class="execution-section">
+                            <div class="text-muted" style="padding: 4px 0;">This component executed but produced no operations or events.</div>
+                          </div>
+                        </div>
+                      </div>
+                      </template>
+
+                      <!-- Multiple inactive components (collapsible group) -->
+                      <template v-else-if="group.type === 'inactive-group'">
+                        <div class="component-ops-group inactive-group">
+                          <div class="component-ops-header inactive-group-header" @click="toggleInactiveGroup(groupIdx)" style="display: flex; align-items: center; cursor: pointer;">
+                            <span class="component-name" style="flex: 1;">
+                              <span class="expand-icon">{{ isInactiveGroupExpanded(groupIdx) ? '▼' : '▶' }}</span>
+                              {{ group.count }} components with no ops/events
+                            </span>
+                          </div>
+                          <template v-if="isInactiveGroupExpanded(groupIdx)">
+                            <!-- Show each inactive component with full structure -->
+                            <div v-for="(comp, compIdx) in group.components" :key="compIdx" class="inactive-component-in-group">
+                              <div class="component-ops-header" style="display: flex; align-items: center; cursor: pointer;">
+                                <span class="component-name" @click="toggleComponentDetail(comp.componentId)" style="flex: 1;">
+                                  <span class="expand-icon">{{ isComponentDetailExpanded(comp.componentId) ? '▼' : '▶' }}</span>
+                                  {{ comp.componentName }}
+                                </span>
+                                <span class="component-stats">
+                                  <span class="stat">no activity</span>
+                                  <span v-if="comp.durationMs !== undefined" class="stat">{{ comp.durationMs.toFixed(1) }}ms</span>
+                                  <button
+                                    v-if="comp.componentSnapshot"
+                                    @click.stop="inspectComponent(comp.componentSnapshot)"
+                                    class="component-inspect-btn"
+                                    title="Inspect component details"
+                                  >🔍</button>
+                                </span>
+                              </div>
+
+                              <!-- Detailed execution info (expandable) -->
+                              <div v-if="isComponentDetailExpanded(comp.componentId)" class="component-execution-detail">
+                                <!-- Input Context -->
+                                <div v-if="comp.context" class="execution-section">
+                                  <h4>Input Context</h4>
+                                  <div class="context-item" v-if="comp.context.inputEvent">
+                                    <strong>Event:</strong> {{ comp.context.inputEvent.topic }}
+                                    <pre v-if="comp.context.inputEvent.payload">{{ JSON.stringify(comp.context.inputEvent.payload, null, 2) }}</pre>
+                                  </div>
+                                  <div class="context-item" v-if="comp.context.stateSnapshot">
+                                    <strong>State:</strong> {{ comp.context.stateSnapshot.facetCount }} facets at sequence {{ comp.context.stateSnapshot.sequence }}
+                                  </div>
+                                  <div class="context-item" v-if="comp.context.eventBufferSnapshot">
+                                    <strong>Event Buffer:</strong> {{ comp.context.eventBufferSnapshot.length }} queued events
+                                    <div v-if="comp.context.eventBufferSnapshot.length > 0" style="margin-top: 4px;">
+                                      <div v-for="(bufEvt, bufIdx) in comp.context.eventBufferSnapshot" :key="bufIdx" class="buffer-event-item">
+                                        <span style="font-size: 0.68rem; color: var(--text-muted);">{{ bufIdx + 1 }}.</span>
+                                        <strong>{{ bufEvt.topic }}</strong>
+                                        <pre v-if="bufEvt.payload">{{ JSON.stringify(bufEvt.payload, null, 2) }}</pre>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <!-- No operations message -->
+                                <div class="execution-section">
+                                  <div class="text-muted" style="padding: 4px 0;">This component executed but produced no operations or events.</div>
+                                </div>
+                              </div>
+                            </div>
+                          </template>
+                        </div>
+                      </template>
                     </template>
                   </div>
                 </div>
