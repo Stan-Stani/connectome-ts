@@ -281,25 +281,102 @@ export class ConnectomeDebugMCP {
   
   /**
    * Search frames for specific patterns
+   * Returns lightweight match objects with context snippets instead of full frames
+   * Use getFrame(frameId) to inspect matching frames in detail
    * @tool
    */
   async searchFrames(params: {
     pattern: string;
     type?: 'operation' | 'event' | 'error';
     limit?: number;
-  }): Promise<Frame[]> {
-    const allFrames = await this.getFrames({ limit: params.limit || 100 });
-    
-    return allFrames.frames.filter(frame => {
+    maxResults?: number;
+  }): Promise<{
+    matches: Array<{
+      frameId: string;
+      sequence: number;
+      timestamp: string;
+      type: string;
+      matchCount: number;
+      matchContext: string;
+    }>;
+    totalSearched: number;
+    totalMatched: number;
+    truncated: boolean;
+  }> {
+    const searchLimit = params.limit || 100;
+    const maxResults = params.maxResults || 20;
+    const contextChars = 100;
+
+    const allFrames = await this.getFrames({ limit: searchLimit });
+    const patternLower = params.pattern.toLowerCase();
+
+    const matches: Array<{
+      frameId: string;
+      sequence: number;
+      timestamp: string;
+      type: string;
+      matchCount: number;
+      matchContext: string;
+    }> = [];
+
+    for (const frame of allFrames.frames) {
       // Filter by type if specified
       if (params.type && frame.type !== params.type) {
-        return false;
+        continue;
       }
-      
+
       // Search in frame content
-      const frameStr = JSON.stringify(frame).toLowerCase();
-      return frameStr.includes(params.pattern.toLowerCase());
-    });
+      const frameStr = JSON.stringify(frame);
+      const frameStrLower = frameStr.toLowerCase();
+
+      // Find all matches and count them
+      let matchCount = 0;
+      let firstMatchIndex = -1;
+      let searchIndex = 0;
+
+      while (true) {
+        const idx = frameStrLower.indexOf(patternLower, searchIndex);
+        if (idx === -1) break;
+
+        if (firstMatchIndex === -1) {
+          firstMatchIndex = idx;
+        }
+        matchCount++;
+        searchIndex = idx + 1;
+      }
+
+      if (matchCount > 0) {
+        // Extract context around first match
+        const start = Math.max(0, firstMatchIndex - contextChars);
+        const end = Math.min(frameStr.length, firstMatchIndex + params.pattern.length + contextChars);
+        let matchContext = frameStr.substring(start, end);
+
+        // Add ellipsis if truncated
+        if (start > 0) matchContext = '...' + matchContext;
+        if (end < frameStr.length) matchContext = matchContext + '...';
+
+        matches.push({
+          frameId: frame.uuid,
+          sequence: frame.sequence,
+          timestamp: frame.timestamp,
+          type: frame.type,
+          matchCount,
+          matchContext
+        });
+
+        // Stop if we've reached maxResults
+        if (matches.length >= maxResults) {
+          break;
+        }
+      }
+    }
+
+    return {
+      matches,
+      totalSearched: allFrames.frames.length,
+      totalMatched: matches.length,
+      truncated: matches.length >= maxResults
+    };
   }
   
   /**
