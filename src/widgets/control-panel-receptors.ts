@@ -29,19 +29,19 @@ export class ControlPanelActionsReceptor extends Component {
 
     console.log('[ControlPanelActionsReceptor] Panel tools registered:', {
       panelId: payload.panelId,
-      elementId: payload.elementId,
+      componentId: payload.componentId,
       toolCount: payload.tools.length
     });
 
     // Use panelId (e.g. "discord-control") as the tool namespace if available
     // This ensures friendly tool names like "discord-control.open" instead of "elem_123.open"
-    const targetId = payload.panelId || payload.elementId;
+    const targetId = payload.panelId || payload.componentId;
 
     // Create facets for panel control actions (open/close)
     this.addOperation({
       type: 'addFacet',
       facet: {
-        id: `action-def-${payload.elementId}-open`,
+        id: `action-def-${payload.componentId}-open`,
         type: 'action-definition',
         displayName: `${targetId}.open`,
         attributes: {
@@ -58,7 +58,7 @@ export class ControlPanelActionsReceptor extends Component {
     this.addOperation({
       type: 'addFacet',
       facet: {
-        id: `tool-instruction-${payload.elementId}-open`,
+        id: `tool-instruction-${payload.componentId}-open`,
         type: 'ambient',
         displayName: 'tool-instruction',
         content: `Open ${payload.displayName} panel: {@${targetId}.open()}`
@@ -68,7 +68,7 @@ export class ControlPanelActionsReceptor extends Component {
     this.addOperation({
       type: 'addFacet',
       facet: {
-        id: `action-def-${payload.elementId}-close`,
+        id: `action-def-${payload.componentId}-close`,
         type: 'action-definition',
         displayName: `${targetId}.close`,
         attributes: {
@@ -86,7 +86,7 @@ export class ControlPanelActionsReceptor extends Component {
     this.addOperation({
       type: 'addFacet',
       facet: {
-        id: `tool-instruction-${payload.elementId}-close`,
+        id: `tool-instruction-${payload.componentId}-close`,
         type: 'ambient',
         displayName: 'tool-instruction',
         content: `Close this panel: {@${targetId}.close()}`,
@@ -103,7 +103,7 @@ export class ControlPanelActionsReceptor extends Component {
       this.addOperation({
         type: 'addFacet',
         facet: {
-          id: `action-def-${payload.elementId}-${tool.name}`,
+          id: `action-def-${payload.componentId}-${tool.name}`,
           type: 'action-definition',
           displayName: toolName,
           attributes: {
@@ -121,14 +121,14 @@ export class ControlPanelActionsReceptor extends Component {
       // Instruction facet (renderable to agent)
       // Replace any internal ID references in instructions with friendly ID
       const instructions = tool.instructions.replace(
-        new RegExp(`{@${payload.elementId}\\.`, 'g'),
+        new RegExp(`{@${payload.componentId}\\.`, 'g'),
         `{@${targetId}.`
       );
 
       this.addOperation({
         type: 'addFacet',
         facet: {
-          id: `tool-instruction-${payload.elementId}-${tool.name}`,
+          id: `tool-instruction-${payload.componentId}-${tool.name}`,
           type: 'ambient',
           displayName: 'tool-instruction',
           content: instructions,
