@@ -83,8 +83,7 @@ export * from './validation/facet-validation';
 // Agent exports
 export * from './agent/types';
 export { BasicAgent } from './agent/basic-agent';
-export { AgentComponent } from './agent/agent-component';
-export { AgentEffector } from './agent/agent-effector';
+export { AgentComponent, AgentEffector } from './agent/agent-component';
 export { AgentElement } from './agent/agent-element';
 export { createBasicAgent, type CreateAgentOptions } from './agent/agent-factory';
 

@@ -16,6 +16,7 @@ import { AxonLoaderComponent } from './components/axon-loader';
 
 // Register core components
 ComponentRegistry.register('AgentComponent', AgentComponent);
+ComponentRegistry.register('AgentEffector', AgentComponent); // Backwards compatibility alias
 ComponentRegistry.register('ConsoleChatComponent', ConsoleChatComponent);
 ComponentRegistry.register('SpaceNotesComponent', SpaceNotesComponent);
 ComponentRegistry.register('AxonLoaderComponent', AxonLoaderComponent);
