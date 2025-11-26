@@ -121,6 +121,9 @@ export class AgentComponent extends Component implements RestorableComponent {
     if (!this.agentRegistered && this.agent && this.veilState) {
       this.registerAgent();
     }
+    // Note: System prompt emission is the responsibility of application-level components
+    // (e.g. DiscordInfrastructureTransform) which should emit ambient facets as needed.
+    // This keeps the framework layer agnostic about how system prompts are configured.
   }
 
   onUnmount(): void {
