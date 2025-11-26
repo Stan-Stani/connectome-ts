@@ -1,7 +1,7 @@
 /**
  * ActiveStreamTransform
  *
- * FLEX Component (priority 50) that sets frame.activeStream based on events.
+ * FLEX Component (constraint: priority 50) that sets frame.activeStream based on events.
  * Generic transform that works for any adapter (Discord, Slack, file editor, etc.)
  *
  * Uses the LAST event with streamId (most recent activity)
@@ -10,10 +10,11 @@
 
 import { Component } from '../spaces/component';
 import { ExecutionContext } from '../spaces/types';
+import { priorityConstraint } from '../spaces/constraints';
 
 export class ActiveStreamTransform extends Component {
-  // FLEX priority: Early in execution, before rendering (ContextTransform is 200)
-  priority = 50;
+  // Early in execution, before rendering (ContextTransform is 200)
+  constraints = [priorityConstraint(50)];
 
   execute(context: ExecutionContext): void {
     const { frame } = context;

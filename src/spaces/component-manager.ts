@@ -8,11 +8,12 @@ import { join, dirname } from 'path';
 import { writeFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { ComponentStateFacet } from '../veil/facet-types';
+import { priorityConstraint } from './constraints';
 
 /**
  * ComponentManager: Unified component lifecycle management
  *
- * FLEX Component (priority 50 - Early infrastructure)
+ * FLEX Component (constraint: priority 50 - Early infrastructure)
  *
  * Handles the complete component lifecycle:
  * 1. Receives component:add events → creates component-state facets with constraints
@@ -23,9 +24,8 @@ import { ComponentStateFacet } from '../veil/facet-types';
  * Both fresh starts and restoration work the same way: facets → components.
  */
 export class ComponentManager extends Component {
-  // FLEX priority: Early infrastructure (50)
   // Runs early so instantiated components can participate in current frame
-  priority = 50;
+  constraints = [priorityConstraint(50)];
 
   // Track which component-state facets we've already instantiated
   private instantiatedComponents = new Set<string>();
@@ -90,7 +90,9 @@ export class ComponentManager extends Component {
       componentType,
       elementId: parentId || 'root',
       initialState: config,
-      priority: payload.priority
+      constraints: payload.priority !== undefined
+        ? [priorityConstraint(payload.priority)]
+        : undefined
     });
 
     // Add facet to VEIL state via Space

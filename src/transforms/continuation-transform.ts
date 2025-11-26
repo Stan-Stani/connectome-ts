@@ -1,7 +1,7 @@
 /**
  * ContinuationTransform - Handles tag-based continuations
  *
- * FLEX Component (priority 200 - Transform level) that watches for
+ * FLEX Component (constraint: priority 200 - Transform level) that watches for
  * continuation:complete facets and triggers subsequent actions based
  * on matching continuation tags.
  */
@@ -16,10 +16,10 @@ import {
   hasContentAspect
 } from '../veil/facet-types';
 import { VEILDelta } from '../veil/types';
+import { priorityConstraint, ComponentPriority } from '../spaces/constraints';
 
 export class ContinuationTransform extends Component {
-  // FLEX priority: Transform level (200)
-  priority = 200;
+  constraints = [priorityConstraint(ComponentPriority.TRANSFORM)];
 
   execute(context: ExecutionContext): void {
     const { state } = context;

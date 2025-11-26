@@ -1,7 +1,7 @@
 /**
  * FrameSnapshotTransform
  *
- * FLEX Component (priority 200 - Transform level) that captures rendered
+ * FLEX Component (constraint: priority 200 - Transform level) that captures rendered
  * snapshots of frames at creation time. Runs late in execution (after state
  * stabilizes) to capture the frame's final rendered appearance with facet attribution.
  *
@@ -15,6 +15,7 @@ import { ReadonlyVEILState } from '../spaces/receptor-effector-types';
 import { VEILDelta } from '../veil/types';
 import { FrameTrackingHUD } from '../hud/frame-tracking-hud';
 import { VEILStateManager } from '../veil/veil-state';
+import { priorityConstraint, ComponentPriority } from '../spaces/constraints';
 
 export interface FrameSnapshotTransformOptions {
   /**
@@ -34,10 +35,9 @@ export interface FrameSnapshotTransformOptions {
 }
 
 export class FrameSnapshotTransform extends Component {
-  // FLEX priority: Transform level (200)
   // Run late in execution, after other transforms have stabilized state
   // TODO [constraint-solver]: Replace with provides = ['frame-snapshots']
-  priority = 200;
+  constraints = [priorityConstraint(ComponentPriority.TRANSFORM)];
 
   private hud: FrameTrackingHUD;
   private captureEnabled: boolean;

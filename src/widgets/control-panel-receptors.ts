@@ -8,13 +8,14 @@ import { Component } from '../spaces/component';
 import type { ExecutionContext } from '../spaces/types';
 import type { VEILDelta } from '../veil/types';
 import type { SpaceEvent } from '../spaces/types';
+import { priorityConstraint, ComponentPriority } from '../spaces/constraints';
 
 /**
  * Receptor that creates action-definition and instruction facets
  * when panel tools are registered (declarative pattern)
  */
 export class ControlPanelActionsReceptor extends Component {
-  priority = 100;
+  constraints = [priorityConstraint(ComponentPriority.RECEPTOR)];
   topics = ['panel:tools-registered'];
 
   execute(context: ExecutionContext): void {
@@ -147,7 +148,7 @@ export class ControlPanelActionsReceptor extends Component {
  * Receptor that handles panel scope activation/deactivation
  */
 export class PanelScopeReceptor extends Component {
-  priority = 100;
+  constraints = [priorityConstraint(ComponentPriority.RECEPTOR)];
   topics = ['panel:scope-change'];
 
   execute(context: ExecutionContext): void {

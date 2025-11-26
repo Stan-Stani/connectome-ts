@@ -3,8 +3,8 @@
  *
  * Implementation using Afferent + FLEX Components:
  * - ConsoleAfferent: Manages readline, emits events when user types
- * - ConsoleMessageReceptor: FLEX Component (priority 100) converts console:message events to facets + activations
- * - ConsoleSpeechEffector: FLEX Component (priority 300) displays agent speech to console
+ * - ConsoleMessageReceptor: FLEX Component (constraint: priority 100) converts console:message events to facets + activations
+ * - ConsoleSpeechEffector: FLEX Component (constraint: priority 300) displays agent speech to console
  */
 
 import * as readline from 'readline';
@@ -15,6 +15,7 @@ import { ReadonlyVEILState, FacetDelta, FacetFilter } from '../spaces/receptor-e
 import { Facet, VEILDelta } from '../veil/types';
 import { persistable, persistent } from '../persistence/decorators';
 import { wrapFacetsAsDeltas } from '../helpers/factories';
+import { priorityConstraint, ComponentPriority } from '../spaces/constraints';
 
 // ============================================
 // AFFERENT: Console Input Handler
@@ -236,11 +237,11 @@ export class ConsoleAfferent extends BaseAfferent<ConsoleConfig, ConsoleCommand>
 // ============================================
 
 /**
- * ConsoleMessageReceptor - FLEX Component (priority 100 - Receptor level)
+ * ConsoleMessageReceptor - FLEX Component (constraint: priority 100 - Receptor level)
  * Converts console:message events to facets + activations
  */
 export class ConsoleMessageReceptor extends Component {
-  priority = 100;
+  constraints = [priorityConstraint(ComponentPriority.RECEPTOR)];
   topics = ['console:message'];
 
   execute(context: ExecutionContext): void {
@@ -303,11 +304,11 @@ export class ConsoleMessageReceptor extends Component {
 // ============================================
 
 /**
- * ConsoleSpeechEffector - FLEX Component (priority 300 - Effector level)
+ * ConsoleSpeechEffector - FLEX Component (constraint: priority 300 - Effector level)
  * Displays agent speech to console
  */
 export class ConsoleSpeechEffector extends Component {
-  priority = 300;
+  constraints = [priorityConstraint(ComponentPriority.EFFECTOR)];
   facetFilters: FacetFilter[] = [{ type: 'speech' }];
 
   constructor(private consoleAfferent?: ConsoleAfferent) {

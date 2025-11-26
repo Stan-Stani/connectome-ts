@@ -6,7 +6,7 @@ import {
   createStateFacet,
   createEventFacet
 } from '../helpers/factories';
-import { ComponentConstraintFacet, PriorityConstraintFacet } from './constraints';
+import { ComponentConstraintFacet, ConstraintFacet } from './constraints';
 
 /**
  * Base component class
@@ -39,33 +39,27 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
   private _subscriptions: string[] = [];
 
   /**
-   * Execution priority (lower runs earlier)
-   * Default: 0
+   * Declared constraints for this component.
+   * Use priorityConstraint() from constraints.ts to set execution order.
+   *
+   * @example
+   * import { priorityConstraint, ComponentPriority } from './constraints';
+   *
+   * class MyReceptor extends Component {
+   *   constraints = [priorityConstraint(ComponentPriority.RECEPTOR)];
+   * }
    */
-  priority: number = 0;
-  private customConstraintFacets: ComponentConstraintFacet[] = [];
+  constraints: ConstraintFacet[] = [];
 
   get enabled(): boolean {
     return this._enabled;
   }
 
   /**
-   * Register an additional constraint facet for this component.
-   */
-  protected addConstraintFacet(facet: ComponentConstraintFacet): void {
-    this.customConstraintFacets.push(facet);
-  }
-
-  /**
-   * Get all constraint facets (default priority + custom facets).
+   * Get all constraint facets for this component.
    */
   getConstraintFacets(): ComponentConstraintFacet[] {
-    const priorityFacet: PriorityConstraintFacet = {
-      type: 'priority',
-      priority: this.priority,
-      source: 'component.priority'
-    };
-    return [priorityFacet, ...this.customConstraintFacets];
+    return [...this.constraints];
   }
   
   set enabled(value: boolean) {

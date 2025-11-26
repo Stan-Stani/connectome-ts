@@ -1,7 +1,7 @@
 /**
  * PersistenceMaintainer - Handles persistence of VEIL state
  *
- * FLEX Component (priority 400) that runs after all other processing is complete.
+ * FLEX Component (constraint: priority 400) that runs after all other processing is complete.
  */
 
 import { Component } from '../spaces/component';
@@ -12,6 +12,7 @@ import { FrameDelta, PersistenceSnapshot } from './types';
 import { serializeVEILState, serializeSpace } from './serialization';
 import { Frame } from '../veil/types';
 import { Space } from '../spaces/space';
+import { priorityConstraint, ComponentPriority } from '../spaces/constraints';
 
 export interface PersistenceMaintainerConfig {
   storagePath: string;
@@ -20,8 +21,7 @@ export interface PersistenceMaintainerConfig {
 }
 
 export class PersistenceMaintainer extends Component {
-  // FLEX priority: Maintainer level (400) - runs last
-  priority = 400;
+  constraints = [priorityConstraint(ComponentPriority.MAINTAINER)];
 
   private storage: FileStorageAdapter;
   private lastSnapshotSequence: number = 0;

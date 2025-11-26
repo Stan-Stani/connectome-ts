@@ -9,15 +9,16 @@ import { Component } from './component';
 import { ExecutionContext, SpaceEvent } from './types';
 import { VEILDelta } from '../veil/types';
 import { ReadonlyVEILState } from './receptor-effector-types';
+import { priorityConstraint, ComponentPriority } from './constraints';
 
 /**
  * Built-in Receptor for VEIL operations
  *
- * FLEX Component (priority 100 - Receptor level)
+ * FLEX Component (constraint: priority 100 - Receptor level)
  * Processes veil:operation events and adds the delta directly
  */
 export class VEILOperationReceptor extends Component {
-  priority = 100;
+  constraints = [priorityConstraint(ComponentPriority.RECEPTOR)];
   topics = ['veil:operation'];
 
   execute(context: ExecutionContext): void {

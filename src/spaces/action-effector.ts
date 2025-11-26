@@ -1,7 +1,7 @@
 /**
  * ActionEffector - Executes component handlers when action facets are created
  *
- * FLEX Component (priority 300) that watches for action facets created by agents
+ * FLEX Component (constraint: priority 300) that watches for action facets created by agents
  * and routes them to the appropriate component handlers for execution.
  */
 
@@ -14,10 +14,10 @@ import {
   ExternalAction
 } from './receptor-effector-types';
 import { hasStateAspect } from '../veil/types';
+import { priorityConstraint, ComponentPriority } from './constraints';
 
 export class ActionEffector extends Component {
-  // FLEX priority: Effector level (300)
-  priority = 300;
+  constraints = [priorityConstraint(ComponentPriority.EFFECTOR)];
 
   // Watch for action facets
   facetFilters: FacetFilter[] = [

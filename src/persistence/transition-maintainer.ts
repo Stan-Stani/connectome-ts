@@ -4,6 +4,7 @@ import { ReadonlyVEILState, SpaceEvent, FacetDelta } from '../spaces/receptor-ef
 import { TransitionNode } from './transition-types';
 import { VEILStateManager } from '../veil/veil-state';
 import { Frame } from '../veil/types';
+import { priorityConstraint, ComponentPriority } from '../spaces/constraints';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -15,12 +16,11 @@ export interface TransitionConfig {
 /**
  * TransitionMaintainer - Tracks frame transitions for time-travel debugging
  *
- * FLEX Component (priority 400 - Maintainer level)
+ * FLEX Component (constraint: priority 400 - Maintainer level)
  * Runs after all other processing is complete.
  */
 export class TransitionMaintainer extends Component {
-  // FLEX priority: Maintainer level (400)
-  priority = 400;
+  constraints = [priorityConstraint(ComponentPriority.MAINTAINER)];
 
   private currentBranch: string = 'main';
   private transitionsSinceSnapshot: number = 0;

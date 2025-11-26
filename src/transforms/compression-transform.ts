@@ -1,7 +1,7 @@
 /**
  * CompressionTransform
  *
- * FLEX Component (priority 250) that coordinates automatic compression of
+ * FLEX Component (constraint: priority 250) that coordinates automatic compression of
  * frame ranges using a CompressionEngine.
  *
  * Responsibilities:
@@ -20,6 +20,7 @@ import { FrameTrackingHUD } from '../hud/frame-tracking-hud';
 import { CompressionEngine, CompressibleRange, CompressionConfig, RenderedFrame, StateDelta } from '../compression/types-v2';
 import { extractFrameRange } from '../hud/frame-extraction';
 import { VEILStateManager } from '../veil/veil-state';
+import { priorityConstraint } from '../spaces/constraints';
 
 interface CompressionTransformOptions {
   engine: CompressionEngine;
@@ -54,10 +55,10 @@ interface CompressionTask {
 }
 
 export class CompressionTransform extends Component {
-  // FLEX priority: Run late in execution, AFTER frame snapshots are captured (priority 200)
+  // Run late in execution, AFTER frame snapshots are captured (priority 200)
   // This allows compression to use pre-captured snapshots instead of re-rendering
   // TODO [constraint-solver]: Replace with requires = ['frame-snapshots'], provides = ['compressed-frames']
-  priority = 250;
+  constraints = [priorityConstraint(250)];
 
   private readonly engine: CompressionEngine;
   private readonly engineName: string;

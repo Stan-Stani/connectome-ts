@@ -35,7 +35,7 @@ import { groupByPriority } from '../utils/priorities';
 // import { isReceptor, isTransform, isEffector, isMaintainer, isModulator } from '../utils/retm-type-guards';
 import { generateId } from './utils';
 import { ComponentOrderingStrategy, PriorityOrderingStrategy } from './ordering/component-ordering';
-import { ComponentConstraintFacet } from './constraints';
+import { ComponentConstraintFacet, ConstraintFacet, priorityConstraint, PriorityConstraintFacet } from './constraints';
 
 /**
  * The root Space that orchestrates the entire system
@@ -171,11 +171,12 @@ export class Space {
    * Add a component to the Space
    */
   addComponent<T extends Component>(
-    component: T, 
-    componentId?: string, 
+    component: T,
+    componentId?: string,
     isRestoring: boolean = false,
     options?: {
       priority?: number;
+      constraints?: ConstraintFacet[];
       after?: Component | string;
       before?: Component | string;
     }
@@ -189,9 +190,15 @@ export class Space {
       return this.componentRegistry.get(id) as T;
     }
 
-    // Apply priority if provided
-    if (options?.priority !== undefined) {
-      component.priority = options.priority;
+    // Inject constraints if provided via options
+    if (options?.constraints && options.constraints.length > 0) {
+      component.constraints = [...options.constraints, ...component.constraints];
+    } else if (options?.priority !== undefined) {
+      // Legacy: convert priority option to constraint
+      component.constraints = [
+        priorityConstraint(options.priority, 'addComponent:options'),
+        ...component.constraints
+      ];
     }
 
     // Handle insertion constraints
@@ -856,12 +863,15 @@ export class Space {
   }
 
   private getComponentSnapshots(): import('../debug/types').DebugComponentSnapshot[] {
-    return this.components.map(c => ({
-      id: c.id || 'unknown',
-      name: c.constructor.name,
-      priority: c.priority,
-      enabled: c.enabled
-    }));
+    return this.components.map(c => {
+      const priorityFacet = c.getConstraintFacets().find(f => f.type === 'priority') as PriorityConstraintFacet | undefined;
+      return {
+        id: c.id || 'unknown',
+        name: c.constructor.name,
+        priority: priorityFacet?.priority ?? 0,
+        enabled: c.enabled
+      };
+    });
   }
 
   private notifyDebugFrameStart(frame: Frame, context: DebugFrameStartContext): void {

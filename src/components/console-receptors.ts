@@ -13,14 +13,15 @@ import {
 } from '../spaces/receptor-effector-types';
 import { hasContentAspect, VEILDelta } from '../veil/types';
 import { createAgentActivation, createEventFacet, wrapFacetsAsDeltas } from '../helpers/factories';
+import { priorityConstraint, ComponentPriority } from '../spaces/constraints';
 
 /**
  * Converts console input events into message AND activation facets
  *
- * FLEX Component (priority 100 - Receptor level)
+ * FLEX Component (constraint: priority 100 - Receptor level)
  */
 export class ConsoleInputReceptor extends Component {
-  priority = 100;
+  constraints = [priorityConstraint(ComponentPriority.RECEPTOR)];
   topics = ['console:input'];
 
   execute(context: ExecutionContext): void {
@@ -61,10 +62,10 @@ export class ConsoleInputReceptor extends Component {
 /**
  * Watches for speech facets and outputs to console
  *
- * FLEX Component (priority 300 - Effector level)
+ * FLEX Component (constraint: priority 300 - Effector level)
  */
 export class ConsoleOutputEffector extends Component {
-  priority = 300;
+  constraints = [priorityConstraint(ComponentPriority.EFFECTOR)];
 
   facetFilters: FacetFilter[] = [{
     type: 'speech'

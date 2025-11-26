@@ -1,7 +1,7 @@
 # FLEX Architecture Documentation
 
 **Branch:** `flex-refactor`
-**Status:** Phase 3 Complete, Phase 4 In Progress
+**Status:** Phase 4 Complete (Constraint-based Priority)
 **Architecture Status:** Active (Replaces MARTEM)
 **Date:** November 2025
 
@@ -12,7 +12,7 @@
 1. [Executive Summary](#executive-summary)
 2. [Core Contract: The Component](#core-contract-the-component)
 3. [Execution Model](#execution-model)
-4. [Priority System](#priority-system)
+4. [Constraint: Priority](#constraint-priority)
 5. [Frame Processing Lifecycle](#frame-processing-lifecycle)
 6. [Migration from MARTEM](#migration-from-martem)
 7. [Practical Implementation](#practical-implementation)
@@ -45,11 +45,11 @@ space (Element)
       ├─ ContextTransform (Component, Phase 2)
       └─ ResponseEffector (Component, Phase 3)
 
-// FLEX (New): Simple flat priority-ordered list
+// FLEX (New): Simple flat constraint-ordered list
 space.components = [
-  MessageReceptor (priority: 100),
-  ContextTransform (priority: 200),
-  ResponseEffector (priority: 300)
+  MessageReceptor (constraint: priority 100),
+  ContextTransform (constraint: priority 200),
+  ResponseEffector (constraint: priority 300)
 ]
 ```
 
@@ -62,12 +62,14 @@ The fundamental unit of FLEX is the `Component`—a transformer that consumes th
 ### The Interface
 
 ```typescript
+import { ConstraintFacet, priorityConstraint } from './constraints';
+
 abstract class Component {
   /**
-   * Priority determines execution order (lower = earlier).
-   * Components execute in ascending priority order.
+   * Constraints determine execution order and behavior.
+   * The priority constraint controls execution order (lower = earlier).
    */
-  priority: number;
+  constraints: ConstraintFacet[] = [];
 
   /**
    * The main pulse of logic, called once per frame per component.
@@ -84,6 +86,14 @@ abstract class Component {
    * Direct reference to the containing space (no tree traversal).
    */
   space: Space;
+}
+```
+
+**Priority as a Constraint**: Priority is just one type of constraint. Components declare their priority via the `constraints` array:
+
+```typescript
+class MyComponent extends Component {
+  constraints = [priorityConstraint(100)];  // Receptor-level priority
 }
 ```
 
@@ -195,11 +205,32 @@ This enables same-frame reactivity—components can respond to changes made by e
 
 ---
 
-## Priority System
+## Constraint: Priority
+
+Priority is a **type of constraint** in the FLEX architecture. Components declare constraints via a `constraints` array, and the priority constraint determines execution order.
+
+### The Priority Constraint
+
+```typescript
+import { priorityConstraint, ComponentPriority } from './constraints';
+
+// Using named constants
+class MyReceptor extends Component {
+  constraints = [priorityConstraint(ComponentPriority.RECEPTOR)];  // 100
+}
+
+// Using numeric values directly
+class CustomComponent extends Component {
+  constraints = [priorityConstraint(150)];  // Between receptor and transform
+}
+
+// ComponentPriority constants:
+// MODULATOR: 0, RECEPTOR: 100, TRANSFORM: 200, EFFECTOR: 300, MAINTAINER: 400
+```
 
 ### Standard Priority Ranges
 
-Components are organized into logical groups by priority:
+Components are organized into logical groups by priority constraint:
 
 | Priority | Role | Purpose | Example Components |
 |----------|------|---------|-------------------|
@@ -209,18 +240,19 @@ Components are organized into logical groups by priority:
 | **300-399** | **Effectors** | Side effects | ResponseEffector, DatabaseWriter |
 | **400-499** | **Maintainers** | Cleanup & persistence | StatePersister, MetricsCollector |
 
-### Priority Rules
+### Priority Constraint Rules
 
 1. **Lower executes first**: Priority 0 runs before priority 100
 2. **Same priority = undefined order**: Don't rely on execution order within same priority
 3. **Fractional priorities allowed**: Use 100.5, 100.75 for fine control
 4. **Custom priorities encouraged**: Set any priority that makes sense for your logic
+5. **No priority = 0**: Components without a priority constraint default to priority 0
 
-### Example: Custom Priority
+### Example: Custom Priority Constraints
 
 ```typescript
 class ActivationReceptor extends Component {
-  priority = 100;  // Standard receptor priority
+  constraints = [priorityConstraint(ComponentPriority.RECEPTOR)];  // 100
 
   execute(context: ExecutionContext): void {
     if (context.event.topic === 'agent.activate') {
@@ -233,7 +265,7 @@ class ActivationReceptor extends Component {
 }
 
 class ActivationDependentTransform extends Component {
-  priority = 150;  // Between receptor and transform - sees activation
+  constraints = [priorityConstraint(150)];  // Between receptor and transform
 
   execute(context: ExecutionContext): void {
     const activation = context.state.facets.get('activation');
@@ -327,10 +359,12 @@ class MyReceptor extends BaseReceptor {
 }
 
 // Still works! BaseReceptor provides:
-// - priority = 100 (default for receptors)
+// - constraints = [priorityConstraint(100)] (default for receptors)
 // - execute() that calls transform()
 // - Subscription checking (though less efficient)
 ```
+
+**Note**: The legacy base classes are deprecated. Prefer using `Component` directly with explicit constraints.
 
 ### Migration Path
 
@@ -339,8 +373,10 @@ class MyReceptor extends BaseReceptor {
 Use the modern Component API directly:
 
 ```typescript
+import { priorityConstraint, ComponentPriority } from './constraints';
+
 class ModernComponent extends Component {
-  priority = 200;
+  constraints = [priorityConstraint(ComponentPriority.TRANSFORM)];  // 200
 
   execute(context: ExecutionContext): void {
     // Direct access to context
@@ -385,7 +421,7 @@ space.addComponent(new ModernComponent());
 
 2. **Gradual migration** when touching code:
    - Replace `extends BaseReceptor` with `extends Component`
-   - Set `priority = 100` explicitly
+   - Add `constraints = [priorityConstraint(100)]` explicitly
    - Move `transform()` logic into `execute()`
    - Remove `topics` array, filter in `execute()` instead
 
@@ -434,13 +470,12 @@ Note: These warnings are currently always shown and cannot be disabled via envir
 const space = new Space();
 
 // Add components directly (no tree structure)
-space.addComponent(new MessageReceptor());      // priority: 100
-space.addComponent(new ContextTransform());     // priority: 200
-space.addComponent(new ResponseEffector());     // priority: 300
+space.addComponent(new MessageReceptor());      // constraint: priority 100
+space.addComponent(new ContextTransform());     // constraint: priority 200
+space.addComponent(new ResponseEffector());     // constraint: priority 300
 
-// Components automatically sorted by priority
-console.log(space.components.map(c => c.priority));
-// Output: [100, 200, 300]
+// Components automatically sorted by priority constraint
+// Priority is extracted from constraints, not a first-class field
 ```
 
 ### Handling Dependencies
@@ -449,7 +484,7 @@ When Component B depends on Component A's output:
 
 ```typescript
 class ComponentA extends Component {
-  priority = 100;  // Runs first
+  constraints = [priorityConstraint(100)];  // Runs first
 
   execute(context) {
     this.addOperation({
@@ -460,7 +495,7 @@ class ComponentA extends Component {
 }
 
 class ComponentB extends Component {
-  priority = 200;  // Runs after A, sees activation
+  constraints = [priorityConstraint(200)];  // Runs after A, sees activation
 
   execute(context) {
     const activation = context.state.facets.get('activation');
@@ -475,7 +510,7 @@ class ComponentB extends Component {
 
 ```typescript
 class EventProcessor extends Component {
-  priority = 100;
+  constraints = [priorityConstraint(ComponentPriority.RECEPTOR)];
 
   execute(context: ExecutionContext): void {
     // Pattern 1: Process current event
@@ -516,14 +551,22 @@ class EventProcessor extends Component {
 ### Runtime Component Inspection
 
 ```typescript
-// View all components and their priorities
+import { PriorityConstraintFacet } from './constraints';
+
+// Helper to extract priority from constraints
+function getComponentPriority(c: Component): number {
+  const priorityFacet = c.getConstraintFacets()
+    .find(f => f.type === 'priority') as PriorityConstraintFacet | undefined;
+  return priorityFacet?.priority ?? 0;
+}
+
+// View all components and their priority constraints
 space.components.forEach(c => {
-  console.log(`${c.constructor.name}: priority ${c.priority}`);
+  console.log(`${c.constructor.name}: constraint priority ${getComponentPriority(c)}`);
 });
 
-// Check execution order
-const sorted = [...space.components].sort((a, b) => a.priority - b.priority);
-console.log('Execution order:', sorted.map(c => c.constructor.name));
+// Check execution order (already sorted by Space)
+console.log('Execution order:', space.components.map(c => c.constructor.name));
 ```
 
 ### Debug Registry (Node Inspector)
@@ -539,12 +582,9 @@ Access via debugger console:
 // Global debug registry
 const debug = global.__connectome_debug;
 
-// Inspect components
-debug.space.components.map(c => ({
-  name: c.constructor.name,
-  priority: c.priority,
-  enabled: c.enabled
-}));
+// Inspect components (uses helper methods added by debug registry)
+debug.getComponents();  // Returns [{id, name, priority, enabled, type}]
+debug.getComponentsByPriority();  // Returns Map<number, ComponentInfo[]>
 
 // Watch state changes
 debug.veilState.getState().facets;
@@ -642,13 +682,13 @@ View traces in `./traces/trace-YYYY-MM-DD.json` files.
 1. **Minimize Component Count**
    ```typescript
    // ❌ Many small components
-   class ReceptorA extends Component { priority = 100; }
-   class ReceptorB extends Component { priority = 101; }
-   class ReceptorC extends Component { priority = 102; }
+   class ReceptorA extends Component { constraints = [priorityConstraint(100)]; }
+   class ReceptorB extends Component { constraints = [priorityConstraint(101)]; }
+   class ReceptorC extends Component { constraints = [priorityConstraint(102)]; }
 
    // ✅ One grouped component
    class CombinedReceptor extends Component {
-     priority = 100;
+     constraints = [priorityConstraint(100)];
      execute(context) {
        this.processA(context);
        this.processB(context);
@@ -666,16 +706,16 @@ View traces in `./traces/trace-YYYY-MM-DD.json` files.
    component.enabled = true;
    ```
 
-3. **Priority Optimization**
+3. **Priority Constraint Optimization**
    ```typescript
-   // Put filters/guards early (low priority)
+   // Put filters/guards early (low priority constraint)
    class EventFilter extends Component {
-     priority = 0;  // Run first, stop processing if needed
+     constraints = [priorityConstraint(ComponentPriority.MODULATOR)];  // 0 - Run first
    }
 
    // Put expensive operations late
    class ExpensiveAnalysis extends Component {
-     priority = 350;  // Only runs if earlier components succeed
+     constraints = [priorityConstraint(350)];  // Only runs if earlier components succeed
    }
    ```
 
@@ -736,10 +776,11 @@ View traces in `./traces/trace-YYYY-MM-DD.json` files.
 
 ```typescript
 import { Component, ExecutionContext } from 'connectome';
+import { priorityConstraint, ComponentPriority } from './constraints';
 
 export class MyComponent extends Component {
-  // Set execution priority (lower = earlier)
-  priority = 200;
+  // Set execution order via priority constraint (lower = earlier)
+  constraints = [priorityConstraint(ComponentPriority.TRANSFORM)];  // 200
 
   // Main execution method
   execute(context: ExecutionContext): void {
@@ -780,14 +821,19 @@ export class MyComponent extends Component {
 }
 ```
 
-### Priority Cheatsheet
+### Priority Constraint Cheatsheet
 
 ```typescript
-0:   Modulators  - Event filtering, validation, aggregation
-100: Receptors   - Event → VEIL facet transformation
-200: Transforms  - VEIL state processing, business logic
-300: Effectors   - External API calls, side effects
-400: Maintainers - Cleanup, persistence, metrics
+// Standard ComponentPriority values
+ComponentPriority.MODULATOR:  0   - Event filtering, validation, aggregation
+ComponentPriority.RECEPTOR:   100 - Event → VEIL facet transformation
+ComponentPriority.TRANSFORM:  200 - VEIL state processing, business logic
+ComponentPriority.EFFECTOR:   300 - External API calls, side effects
+ComponentPriority.MAINTAINER: 400 - Cleanup, persistence, metrics
+
+// Usage
+constraints = [priorityConstraint(ComponentPriority.RECEPTOR)];  // Named constant
+constraints = [priorityConstraint(150)];  // Custom numeric value
 ```
 
 ### Common Patterns
@@ -818,12 +864,12 @@ this.addOperation({
   }
 });
 
-// Pattern 5: Component coordination via priority
+// Pattern 5: Component coordination via priority constraint
 class Producer extends Component {
-  priority = 100;  // Runs first
+  constraints = [priorityConstraint(100)];  // Runs first
 }
 class Consumer extends Component {
-  priority = 200;  // Sees Producer's output
+  constraints = [priorityConstraint(200)];  // Sees Producer's output
 }
 ```
 
@@ -870,6 +916,13 @@ ENABLE_TRACING=true npm run test:phase0
 
 ---
 
-**Document Version:** 2.1
-**Architecture Version:** FLEX Phase 3 (with ReadonlyFrame)
-**Last Updated:** 2025-11-20
+**Document Version:** 3.0
+**Architecture Version:** FLEX Phase 4 (Constraint-based priority)
+**Last Updated:** 2025-11-26
+
+### Changelog (v3.0)
+- **Breaking Change**: Priority is now a constraint type, not a first-class field
+- Replaced `priority: number` field with `constraints: ConstraintFacet[]` array
+- Added `priorityConstraint()` factory and `ComponentPriority` constants
+- All components must use `constraints = [priorityConstraint(X)]` instead of `priority = X`
+- Removed backward-compatibility shim that created PriorityConstraintFacet from `component.priority`

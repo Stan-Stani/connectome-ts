@@ -2,7 +2,7 @@
  * AgentComponent - FLEX component that manages agent lifecycle and executes agent cycles
  *
  * Consolidates the previous AgentComponent (container/lifecycle) and AgentEffector (execution)
- * into a single FLEX component with priority 300 (Effector level).
+ * into a single FLEX component with constraint: priority 300 (Effector level).
  *
  * Watches for agent-activation + rendered-context facets and runs the agent to produce
  * speech/action/thought facets.
@@ -28,11 +28,11 @@ import { BasicAgent } from './basic-agent';
 import { FacetDelta, ReadonlyVEILState, FacetFilter } from '../spaces/receptor-effector-types';
 import { getGlobalTracer, TraceStorage } from '../tracing';
 import { RenderedContext } from '../hud/types-v2';
+import { priorityConstraint, ComponentPriority } from '../spaces/constraints';
 
 @persistable(1)
 export class AgentComponent extends Component implements RestorableComponent {
-  // FLEX priority: Effector level (300)
-  priority = 300;
+  constraints = [priorityConstraint(ComponentPriority.EFFECTOR)];
 
   // Watch for activation facets AND their rendered contexts
   facetFilters: FacetFilter[] = [

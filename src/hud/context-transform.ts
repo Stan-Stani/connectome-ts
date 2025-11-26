@@ -1,7 +1,7 @@
 /**
  * ContextTransform - A Transform that renders context for agent activations
  *
- * FLEX Component (priority 200) that runs during frame processing and creates
+ * FLEX Component (constraint: priority 200) that runs during frame processing and creates
  * rendered-context facets for any pending agent activations.
  */
 
@@ -13,6 +13,7 @@ import { FrameTrackingHUD } from './frame-tracking-hud';
 import { CompressionEngine } from '../compression/types-v2';
 import { HUDConfig } from './types-v2';
 import { VEILStateManager } from '../veil/veil-state';
+import { priorityConstraint, ComponentPriority } from '../spaces/constraints';
 
 export interface ContextTransformConfig {
   compressionEngine?: CompressionEngine;
@@ -20,8 +21,7 @@ export interface ContextTransformConfig {
 }
 
 export class ContextTransform extends Component {
-  // FLEX priority: Transform level (200) - after Receptors (100), before Effectors (300)
-  priority = 200;
+  constraints = [priorityConstraint(ComponentPriority.TRANSFORM)];
 
   private hud: FrameTrackingHUD;
   private compressionEngine?: CompressionEngine;

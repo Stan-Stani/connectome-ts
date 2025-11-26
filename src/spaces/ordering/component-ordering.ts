@@ -27,11 +27,7 @@ export class PriorityOrderingStrategy implements ComponentOrderingStrategy {
       .getConstraintFacets()
       .find(facet => facet.type === 'priority') as PriorityConstraintFacet | undefined;
 
-    if (priorityFacet && typeof priorityFacet.priority === 'number') {
-      return priorityFacet.priority;
-    }
-
-    return component.priority ?? 0;
+    return priorityFacet?.priority ?? 0;
   }
 }
 

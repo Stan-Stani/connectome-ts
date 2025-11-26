@@ -1,7 +1,7 @@
 /**
  * StateTransitionTransform - Automatically generates event facets for state changes
  *
- * FLEX Component (priority 200 - Transform level) that runs during execution and
+ * FLEX Component (constraint: priority 200 - Transform level) that runs during execution and
  * detects state changes, using renderers attached to state facets to create
  * human-readable event descriptions.
  */
@@ -11,10 +11,10 @@ import { ExecutionContext } from '../spaces/types';
 import { ReadonlyVEILState } from '../spaces/receptor-effector-types';
 import { Facet, hasStateAspect, StateFacet, VEILDelta } from '../veil/types';
 import { createEventFacet } from '../helpers/factories';
+import { priorityConstraint, ComponentPriority } from '../spaces/constraints';
 
 export class StateTransitionTransform extends Component {
-  // FLEX priority: Transform level (200)
-  priority = 200;
+  constraints = [priorityConstraint(ComponentPriority.TRANSFORM)];
 
   private previousStates = new Map<string, any>();
 

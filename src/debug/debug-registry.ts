@@ -8,7 +8,16 @@ import { Space } from '../spaces/space';
 import { VEILStateManager } from '../veil/veil-state';
 import { DebugServer } from './debug-server';
 import { BasicAgent } from '../agent/basic-agent';
+import { PriorityConstraintFacet } from '../spaces/constraints';
 import * as inspector from 'inspector';
+
+/**
+ * Helper to extract priority from a component's constraints
+ */
+function getComponentPriority(component: { getConstraintFacets(): { type: string; priority?: number }[] }): number {
+  const priorityFacet = component.getConstraintFacets().find(c => c.type === 'priority') as PriorityConstraintFacet | undefined;
+  return priorityFacet?.priority ?? 0;
+}
 
 interface ComponentInfo {
   id: string;
@@ -89,7 +98,7 @@ export function registerDebugSpace(space: Space): void {
     return registry.space.components.map(c => ({
       id: c.id,
       name: c.constructor.name,
-      priority: c.priority,
+      priority: getComponentPriority(c),
       enabled: c.enabled,
       type: c.constructor.name
     }));
@@ -100,18 +109,19 @@ export function registerDebugSpace(space: Space): void {
     if (!registry.space) return byPriority;
 
     for (const c of registry.space.components) {
+      const priority = getComponentPriority(c);
       const info: ComponentInfo = {
         id: c.id,
         name: c.constructor.name,
-        priority: c.priority,
+        priority,
         enabled: c.enabled,
         type: c.constructor.name
       };
 
-      if (!byPriority.has(c.priority)) {
-        byPriority.set(c.priority, []);
+      if (!byPriority.has(priority)) {
+        byPriority.set(priority, []);
       }
-      byPriority.get(c.priority)!.push(info);
+      byPriority.get(priority)!.push(info);
     }
 
     return byPriority;

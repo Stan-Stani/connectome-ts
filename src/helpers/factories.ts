@@ -22,6 +22,7 @@ import type {
 } from '../veil/types';
 // import { Element } from '../spaces/element'; // Removed
 import { validateFacet } from '../validation/facet-validation';
+import { ConstraintFacet, priorityConstraint } from '../spaces/constraints';
 
 // Counter for friendly sequential IDs
 let idCounter = 0;
@@ -464,28 +465,26 @@ export const changeFacet = rewriteFacet;  // Backward compat
 
 /**
  * Create a component state facet for VEIL-based component persistence.
- * Includes nested constraint facet for priority ordering.
+ * Includes nested constraint facet for ordering.
  */
 export function createComponentStateFacet(init: {
   componentId: string;
   componentType: string;
   elementId: string;
   initialState?: Record<string, any>;
-  priority?: number;
+  constraints?: ConstraintFacet[];
 }): Facet {
   const constraintsFacetId = `constraints:${init.componentId}`;
-  const priority = init.priority ?? 300; // Default priority
+
+  // Use provided constraints or default to priority 0
+  const constraints = init.constraints && init.constraints.length > 0
+    ? init.constraints
+    : [priorityConstraint(0, 'component-state-factory:default')];
 
   const constraintsChildFacet = {
     id: constraintsFacetId,
     type: 'component-constraints',
-    state: {
-      constraints: [{
-        type: 'priority',
-        priority,
-        source: 'component-state-factory'
-      }]
-    }
+    state: { constraints }
   };
 
   return {
