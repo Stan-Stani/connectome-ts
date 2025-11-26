@@ -429,7 +429,7 @@ export class TransitionManager {
     switch (op.type) {
       case 'add-component':
         // All components are mounted directly on Space
-        const component = ComponentRegistry.create(op.componentClass);
+        const component = ComponentRegistry.create(op.componentType);
         if (component) {
           // Restore initial state if provided
           if (op.initialState) {
@@ -438,7 +438,7 @@ export class TransitionManager {
           // Add to space with generated ID
           this.space.addComponent(component);
         } else {
-          console.warn(`Component not found in registry: ${op.componentClass}`);
+          console.warn(`Component not found in registry: ${op.componentType}`);
         }
         break;
         

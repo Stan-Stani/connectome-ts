@@ -1,42 +1,107 @@
 import { Component } from './component';
 import { ExecutionContext } from './types';
-import { SpaceEvent, FacetDelta } from './receptor-effector-types';
+import { SpaceEvent } from './receptor-effector-types';
 import { ReadonlyVEILState, ReadonlyFrame } from '../veil/types';
 import { ComponentRegistry } from '../persistence/component-registry';
-import { Space } from './space';
+import { createComponentStateFacet } from '../helpers/factories';
 import { join, dirname } from 'path';
 import { writeFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { ComponentStateFacet } from '../veil/facet-types';
 
 /**
- * ComponentManager: Instantiates components from component-state facets
+ * ComponentManager: Unified component lifecycle management
  *
- * FLEX Component (priority 400 - Maintainer level)
+ * FLEX Component (priority 50 - Early infrastructure)
  *
- * VEIL-first component instantiation:
- * 1. ComponentStateReceptor (priority 100) creates component-state facets
- * 2. ComponentManager (priority 400) reads facets and instantiates components
- * 3. Components are added to Space and initialized
+ * Handles the complete component lifecycle:
+ * 1. Receives component:add events → creates component-state facets with constraints
+ * 2. Instantiates components from facets (both fresh and restored)
+ * 3. Handles component:remove events → removes components
  *
  * This maintains VEIL as the single source of truth for component lifecycle.
- * Both fresh starts and restoration work the same way: read facets, create components.
+ * Both fresh starts and restoration work the same way: facets → components.
  */
 export class ComponentManager extends Component {
-  // FLEX priority: Maintainer level (400)
-  priority = 400;
+  // FLEX priority: Early infrastructure (50)
+  // Runs early so instantiated components can participate in current frame
+  priority = 50;
 
   // Track which component-state facets we've already instantiated
   private instantiatedComponents = new Set<string>();
 
   execute(context: ExecutionContext): void {
-    const { frame, state } = context;
+    const { event, frame, state } = context;
     if (!frame) return;
 
-    // Process asynchronously (fire and forget)
+    // Handle component:add events - create facet first
+    if (event.topic === 'component:add') {
+      this.handleComponentAdd(event, state);
+    }
+
+    // Process all pending component instantiations
     this.processComponents(frame, state).catch(err => {
       console.error('[ComponentManager] Error processing components:', err);
     });
+
+    // Handle component:remove events
+    if (event.topic === 'component:remove') {
+      this.handleComponentRemove(event);
+    }
+  }
+
+  /**
+   * Handle component:add event - create component-state facet with constraints
+   */
+  private handleComponentAdd(event: SpaceEvent, state: ReadonlyVEILState): void {
+    const payload = event.payload as any;
+    const componentType = payload.componentType || payload.type;
+    const config = payload.config || {};
+
+    if (!componentType) {
+      console.warn('[ComponentManager] component:add event missing componentType', payload);
+      return;
+    }
+
+    // Generate component ID
+    let componentId = payload.componentId;
+    const parentId = payload.parentId || payload.elementId;
+    if (!componentId && parentId) {
+      if (parentId !== 'root') {
+        componentId = `${parentId}:${componentType}`;
+      }
+    }
+    if (!componentId) {
+      componentId = `${componentType}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    }
+
+    // Check if component-state facet already exists (idempotency)
+    const facetId = `component-state:${componentId}`;
+    if (state.facets.has(facetId)) {
+      console.log(`[ComponentManager] Component-state facet already exists: ${facetId}`);
+      return;
+    }
+
+    console.log(`[ComponentManager] Creating component-state facet for ${componentType} (${componentId})`);
+
+    // Create component-state facet with nested constraints
+    const facet = createComponentStateFacet({
+      componentId,
+      componentType,
+      elementId: parentId || 'root',
+      initialState: config,
+      priority: payload.priority
+    });
+
+    // Add facet to VEIL state via Space
+    if ('applyOperation' in this.space) {
+      (this.space as any).applyOperation({
+        type: 'addFacet',
+        facet
+      });
+    } else {
+      console.error('[ComponentManager] Space does not support applyOperation - cannot create facet');
+    }
   }
 
   private async processComponents(frame: ReadonlyFrame, state: ReadonlyVEILState): Promise<void> {
@@ -49,15 +114,6 @@ export class ComponentManager extends Component {
       }
     }
 
-    // Handle component removal events
-    if (frame.events) {
-      for (const event of frame.events) {
-        if (event.topic === 'component:remove') {
-          this.handleComponentRemove(event);
-        }
-      }
-    }
-
     // Emit collected events directly via space (async processing)
     for (const event of events) {
       this.space.emit(event);
@@ -66,7 +122,6 @@ export class ComponentManager extends Component {
 
   // Infrastructure components that should not be instantiated by ComponentManager
   private static readonly INFRASTRUCTURE_TYPES = new Set([
-    'ComponentStateReceptor',
     'ComponentManager',
     'PersistenceMaintainer',
     'VEILOperationReceptor',
@@ -168,11 +223,11 @@ export class ComponentManager extends Component {
       this.instantiatedComponents.add(facetId); // Mark as processed to avoid infinite retries
     }
   }
-  
+
   private handleComponentRemove(event: SpaceEvent): void {
      const payload = event.payload as any;
      const { componentId } = payload;
-     
+
      if (componentId) {
        const component = this.space.getComponentById(componentId);
        if (component) {
@@ -189,7 +244,7 @@ export class ComponentManager extends Component {
    */
   private async loadAndRegisterAxonComponent(componentType: string, axonMetadata: any): Promise<void> {
     const { moduleUrl } = axonMetadata;
-    
+
     try {
       // Fetch module code
       const response = await fetch(moduleUrl);
@@ -197,33 +252,33 @@ export class ComponentManager extends Component {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       const moduleCode = await response.text();
-      
+
       // Create module environment similar to AxonLoader
       const { createAxonEnvironment } = require('../axon/environment');
       const env = createAxonEnvironment();
-      
+
       // Write module to temp file for proper Node.js module loading
       const Module = require('module');
-      
+
       const tempFile = join(tmpdir(), `connectome-axon-${componentType}-${Date.now()}.js`);
       writeFileSync(tempFile, moduleCode);
-      
+
       // Clear module cache to force reload
       delete require.cache[tempFile];
-      
+
       // Create a module with proper paths for resolution
       const axonModule = new Module(tempFile);
       axonModule.filename = tempFile;
       axonModule.paths = Module._nodeModulePaths(dirname(tempFile));
-      
+
       // Add connectome-ts parent directory to module paths
       const connectomeParentPath = join(__dirname, '../../..');
       axonModule.paths.unshift(connectomeParentPath);
-      
+
       // Load module
       axonModule._compile(moduleCode, tempFile);
       const module: { exports: any } = { exports: axonModule.exports };
-      
+
       // Clean up temp file after a delay
       setTimeout(() => {
         try {
@@ -231,7 +286,7 @@ export class ComponentManager extends Component {
           unlinkSync(tempFile);
         } catch (e) {}
       }, 1000);
-      
+
       // Get module exports
       const moduleExports = module.exports as any;
 
@@ -297,4 +352,3 @@ export class ComponentManager extends Component {
     }
   }
 }
-

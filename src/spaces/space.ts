@@ -357,9 +357,7 @@ export class Space {
         }]);
       } else {
         // Create new component-state facet with constraints nested inside
-        // Extract component type from constructor name, infer component class from priority
         const componentType = component.constructor.name || 'Unknown';
-        const componentClass = this.inferComponentClass(component);
 
         this.veilState.applyDeltasDirect([{
           type: 'addFacet',
@@ -367,7 +365,6 @@ export class Space {
             id: parentFacetId,
             type: 'component-state',
             componentType,
-            componentClass,
             componentId,
             elementId: 'root', // Components are attached to Space (root element)
             state: {},
@@ -387,20 +384,6 @@ export class Space {
     for (const [componentId, component] of this.componentRegistry.entries()) {
       this.updateConstraintFacetsForComponent(componentId, component);
     }
-  }
-
-  /**
-   * Infer component class from component's priority
-   */
-  private inferComponentClass(component: Component): 'modulator' | 'afferent' | 'receptor' | 'transform' | 'effector' | 'maintainer' {
-    const priority = component.priority;
-
-    // FLEX priority ranges (see FLEX_ARCHITECTURE.md)
-    if (priority < 100) return 'modulator';      // 0-99
-    if (priority < 200) return 'receptor';       // 100-199
-    if (priority < 300) return 'transform';      // 200-299
-    if (priority < 400) return 'effector';       // 300-399
-    return 'maintainer';                          // 400+
   }
 
   /**

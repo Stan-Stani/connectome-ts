@@ -54,10 +54,10 @@ class HostHandlerComponent extends Component {
   async handleEvent(event: SpaceEvent): Promise<void> {
     console.log(`[Host Handler] Received event: ${event.topic}`);
     if (event.topic === 'axon:component-loaded') {
-      const payload = event.payload as { component: Component; componentClass: string };
+      const payload = event.payload as { component: Component; componentType: string };
       const component = payload.component;
       if (component) {
-        console.log(`🔌 Resolving references for dynamically loaded component: ${payload.componentClass}`);
+        console.log(`🔌 Resolving references for dynamically loaded component: ${payload.componentType}`);
         await this.host.resolveComponentReferences(component);
         await this.host.resolveExternalResources(component);
 
@@ -389,21 +389,15 @@ export class ConnectomeHost {
    * Initialize core Component infrastructure
    */
   private async initializeComponentInfrastructure(space: Space): Promise<void> {
-    // Import component lifecycle managers
-    const { ComponentStateReceptor } = await import('../spaces/component-state-receptor');
     const { ComponentManager } = await import('../spaces/component-manager');
 
-    console.log('✨ Connectome host initialized with VEIL-first component architecture');
+    console.log('✨ Connectome host initialized with FLEX component architecture');
 
-    // Mount ComponentStateReceptor (priority 100) - converts events to facets
-    const componentStateReceptor = new ComponentStateReceptor();
-    space.addComponent(componentStateReceptor, 'infrastructure:ComponentStateReceptor');
-
-    // Mount ComponentManager (priority 400) - instantiates from facets
+    // Mount ComponentManager (priority 50) - handles component:add events and instantiation
     const componentManager = new ComponentManager();
     space.addComponent(componentManager, 'infrastructure:ComponentManager');
 
-    console.log('🔧 Component infrastructure initialized (VEIL-first)');
+    console.log('🔧 Component infrastructure initialized');
   }
 
   /**
@@ -561,7 +555,6 @@ export class ConnectomeHost {
     // Infrastructure components that are added by the host/space separately
     // These should not be restored from facets
     const infrastructureTypes = new Set([
-      'ComponentStateReceptor',
       'ComponentManager',
       'PersistenceMaintainer',
       'VEILOperationReceptor',

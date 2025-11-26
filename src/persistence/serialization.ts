@@ -321,7 +321,6 @@ function serializeFacet(facet: Facet): any {
     case 'component-state': {
       const componentStateFacet = facet as ComponentStateFacet;
       serialized.componentType = componentStateFacet.componentType;
-      serialized.componentClass = componentStateFacet.componentClass;
       serialized.componentId = componentStateFacet.componentId;
       serialized.elementId = componentStateFacet.elementId;
       break;

@@ -49,7 +49,6 @@ export {
 export { Space } from './spaces/space';
 export { Component as SpaceComponent } from './spaces/component';
 export { ComponentManager } from './spaces/component-manager';
-export { ComponentStateReceptor } from './spaces/component-state-receptor';
 
 // Component base type export
 export * from './types/component';

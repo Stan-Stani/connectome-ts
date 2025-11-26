@@ -112,7 +112,6 @@ function deserializeFacet(data: any): Facet | null {
 
       case 'component-state':
         if (data.componentType) base.componentType = data.componentType;
-        if (data.componentClass) base.componentClass = data.componentClass;
         if (data.componentId) base.componentId = data.componentId;
         if (data.elementId) base.elementId = data.elementId;
         break;

@@ -77,7 +77,7 @@ export abstract class VEILComponent extends Component {
     
     frame.transition.componentChanges.push({
       elementRef: this.getRef(),
-      componentClass: this.constructor.name,
+      componentType: this.constructor.name,
       componentIndex,
       property: propertyName,
       oldValue,

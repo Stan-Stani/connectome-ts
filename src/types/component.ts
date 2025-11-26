@@ -33,13 +33,13 @@ export interface Component {
 export interface ComponentMetadata {
   /** Unique component type identifier (e.g., 'discord-afferent', 'rate-limit-modulator') */
   componentType: string;
-  
-  /** Component class for Space registration */
-  componentClass: 'modulator' | 'afferent' | 'receptor' | 'transform' | 'effector' | 'maintainer';
-  
+
+  /** Component priority for FLEX ordering */
+  priority?: number;
+
   /** Optional version for hot-reload compatibility */
   version?: string;
-  
+
   /** Optional dependencies on other components */
   dependencies?: string[];
 }

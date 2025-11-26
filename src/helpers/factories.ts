@@ -463,23 +463,39 @@ export const updateState = rewriteFacet;
 export const changeFacet = rewriteFacet;  // Backward compat
 
 /**
- * Create a component state facet for VEIL-based component persistence
+ * Create a component state facet for VEIL-based component persistence.
+ * Includes nested constraint facet for priority ordering.
  */
 export function createComponentStateFacet(init: {
   componentId: string;
   componentType: string;
-  componentClass: 'modulator' | 'afferent' | 'receptor' | 'transform' | 'effector' | 'maintainer';
   elementId: string;
   initialState?: Record<string, any>;
+  priority?: number;
 }): Facet {
+  const constraintsFacetId = `constraints:${init.componentId}`;
+  const priority = init.priority ?? 300; // Default priority
+
+  const constraintsChildFacet = {
+    id: constraintsFacetId,
+    type: 'component-constraints',
+    state: {
+      constraints: [{
+        type: 'priority',
+        priority,
+        source: 'component-state-factory'
+      }]
+    }
+  };
+
   return {
     id: `component-state:${init.componentId}`,
     type: 'component-state',
     componentType: init.componentType,
-    componentClass: init.componentClass,
     componentId: init.componentId,
     elementId: init.elementId,
-    state: init.initialState || {}
+    state: init.initialState || {},
+    children: [constraintsChildFacet]
   } as any;
 }
 
