@@ -712,7 +712,7 @@ export class DebugServer {
       try {
         const components = this.space.components || [];
 
-        // Serialize space structure with FLEX priority-based ordering
+        // Serialize space structure with constraint-based component info
         const spaceInfo = {
           id: this.space.id,
           name: this.space.name,
@@ -720,8 +720,8 @@ export class DebugServer {
             constructor: { name: c.constructor.name },
             name: c.constructor.name,
             id: c.id || 'unknown',
-            priority: (c as any).priority ?? 0,
-            enabled: (c as any).enabled ?? true
+            constraints: c.getConstraintFacets(),
+            enabled: c.enabled
           })),
           componentCount: components.length
         };

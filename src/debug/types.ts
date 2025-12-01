@@ -1,11 +1,12 @@
 import type { Frame, StreamRef } from '../veil/types';
 import type { SpaceEvent, EventPhase } from '../spaces/types';
 import type { RenderedContext } from '../hud/types-v2';
+import type { ComponentConstraintFacet } from '../spaces/constraints';
 
 export interface DebugComponentSnapshot {
   id: string;
   name: string;
-  priority: number;
+  constraints: ComponentConstraintFacet[];
   enabled: boolean;
   state?: Record<string, any>;
 }

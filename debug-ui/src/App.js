@@ -309,10 +309,13 @@ export const App = {
 
     function selectComponent(component) {
       if (!component) return;
+      const constraintSummary = (component.constraints || [])
+        .map(c => c.type === 'priority' ? `priority:${c.priority}` : c.type)
+        .join(', ') || 'no constraints';
       state.activeDetail = {
         type: 'component',
         title: `Component · ${component.name}`,
-        subtitle: `Priority ${component.priority} · ${component.enabled ? 'Enabled' : 'Disabled'}`,
+        subtitle: `${component.enabled ? 'Enabled' : 'Disabled'} · ${constraintSummary}`,
         data: component
       };
     }

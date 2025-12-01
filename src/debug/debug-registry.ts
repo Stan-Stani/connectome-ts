@@ -8,13 +8,13 @@ import { Space } from '../spaces/space';
 import { VEILStateManager } from '../veil/veil-state';
 import { DebugServer } from './debug-server';
 import { BasicAgent } from '../agent/basic-agent';
-import { PriorityConstraintFacet } from '../spaces/constraints';
+import { ComponentConstraintFacet, PriorityConstraintFacet } from '../spaces/constraints';
 import * as inspector from 'inspector';
 
 /**
- * Helper to extract priority from a component's constraints
+ * Helper to extract priority value from a component's constraints (for grouping/ordering)
  */
-function getComponentPriority(component: { getConstraintFacets(): { type: string; priority?: number }[] }): number {
+function extractPriorityValue(component: { getConstraintFacets(): ComponentConstraintFacet[] }): number {
   const priorityFacet = component.getConstraintFacets().find(c => c.type === 'priority') as PriorityConstraintFacet | undefined;
   return priorityFacet?.priority ?? 0;
 }
@@ -22,7 +22,7 @@ function getComponentPriority(component: { getConstraintFacets(): { type: string
 interface ComponentInfo {
   id: string;
   name: string;
-  priority: number;
+  constraints: ComponentConstraintFacet[];
   enabled: boolean;
   type?: string;  // Constructor name
 }
@@ -98,7 +98,7 @@ export function registerDebugSpace(space: Space): void {
     return registry.space.components.map(c => ({
       id: c.id,
       name: c.constructor.name,
-      priority: getComponentPriority(c),
+      constraints: c.getConstraintFacets(),
       enabled: c.enabled,
       type: c.constructor.name
     }));
@@ -109,19 +109,19 @@ export function registerDebugSpace(space: Space): void {
     if (!registry.space) return byPriority;
 
     for (const c of registry.space.components) {
-      const priority = getComponentPriority(c);
+      const priorityValue = extractPriorityValue(c);
       const info: ComponentInfo = {
         id: c.id,
         name: c.constructor.name,
-        priority,
+        constraints: c.getConstraintFacets(),
         enabled: c.enabled,
         type: c.constructor.name
       };
 
-      if (!byPriority.has(priority)) {
-        byPriority.set(priority, []);
+      if (!byPriority.has(priorityValue)) {
+        byPriority.set(priorityValue, []);
       }
-      byPriority.get(priority)!.push(info);
+      byPriority.get(priorityValue)!.push(info);
     }
 
     return byPriority;

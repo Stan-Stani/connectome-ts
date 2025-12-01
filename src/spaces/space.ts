@@ -35,7 +35,7 @@ import { groupByPriority } from '../utils/priorities';
 // import { isReceptor, isTransform, isEffector, isMaintainer, isModulator } from '../utils/retm-type-guards';
 import { generateId } from './utils';
 import { ComponentOrderingStrategy, PriorityOrderingStrategy } from './ordering/component-ordering';
-import { ComponentConstraintFacet, ConstraintFacet, priorityConstraint, PriorityConstraintFacet } from './constraints';
+import { ComponentConstraintFacet, ConstraintFacet, priorityConstraint } from './constraints';
 
 /**
  * The root Space that orchestrates the entire system
@@ -863,15 +863,12 @@ export class Space {
   }
 
   private getComponentSnapshots(): import('../debug/types').DebugComponentSnapshot[] {
-    return this.components.map(c => {
-      const priorityFacet = c.getConstraintFacets().find(f => f.type === 'priority') as PriorityConstraintFacet | undefined;
-      return {
-        id: c.id || 'unknown',
-        name: c.constructor.name,
-        priority: priorityFacet?.priority ?? 0,
-        enabled: c.enabled
-      };
-    });
+    return this.components.map(c => ({
+      id: c.id || 'unknown',
+      name: c.constructor.name,
+      constraints: c.getConstraintFacets(),
+      enabled: c.enabled
+    }));
   }
 
   private notifyDebugFrameStart(frame: Frame, context: DebugFrameStartContext): void {
