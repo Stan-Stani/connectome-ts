@@ -38,23 +38,19 @@ export async function restoreVEILState(
     currentStateCache: new Map()  // Will be rebuilt from facets
   };
   
-  // Helper to recursively add facet and all its children to the Map
-  const addFacetAndChildren = (facet: any, depth = 0) => {
+  // Add facet to the Map - children stay nested, not flattened to top-level
+  // This prevents orphaned children when parent facets are removed, and
+  // eliminates data duplication/inconsistency between nested and flattened copies
+  const addFacet = (facet: any) => {
     newState.facets.set(facet.id, facet);
-    if (facet.children && facet.children.length > 0) {
-      console.log(`[Restoration] Facet ${facet.id} has ${facet.children.length} children at depth ${depth}`);
-      for (const child of facet.children) {
-        console.log(`[Restoration]   → Adding child: ${child.id} (type: ${child.type})`);
-        addFacetAndChildren(child, depth + 1);
-      }
-    }
+    // Children remain nested in facet.children - no flattening
   };
   
   // Restore facets
   for (const [id, facetData] of serialized.facets) {
     const facet = deserializeFacet(facetData);
     if (facet) {
-      addFacetAndChildren(facet);
+      addFacet(facet);
     }
   }
   
