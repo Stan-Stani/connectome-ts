@@ -49,9 +49,9 @@ Please test in `examples/console-chat-host.ts` or create a minimal test:
 
 1. Add logging in `ContextTransform.process()`:
 ```typescript
-console.log(`[ContextTransform] Frame history: ${fullState.frameHistory.length} frames`);
-console.log(`[ContextTransform] Current frame: ${currentFrame ? 'YES' : 'NO'}`);
-console.log(`[ContextTransform] Total frames for rendering: ${allFrames.length}`);
+// console.log(`[ContextTransform] Frame history: ${fullState.frameHistory.length} frames`);
+// console.log(`[ContextTransform] Current frame: ${currentFrame ? 'YES' : 'NO'}`);
+// console.log(`[ContextTransform] Total frames for rendering: ${allFrames.length}`);
 ```
 
 2. Check that when a user message arrives:

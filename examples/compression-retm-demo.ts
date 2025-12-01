@@ -14,6 +14,7 @@ import {
   VEILStateManager,
   Element,
   BasicAgent,
+  AgentComponent,
   AgentEffector,
   CompressionTransform,
   ContextTransform,
@@ -38,6 +39,10 @@ async function demonstrateCompression() {
   const space = new Space(veilState);
   const llmProvider = new MockLLMProvider();
   
+  // Create system element for transforms
+  const systemElement = new Element('system', 'system');
+  space.addChild(systemElement);
+  
   // ========================================
   // STEP 1: Create Compression Engine
   // ========================================
@@ -61,16 +66,15 @@ async function demonstrateCompression() {
     triggerThreshold: 300,        // Compress when > 300 tokens
     minFramesBeforeCompression: 5 // Wait for at least 5 frames
   });
-  space.addTransform(compressionTransform);
+  systemElement.addComponent(compressionTransform);
   console.log(`   ✓ CompressionTransform (priority=${compressionTransform.priority})`);
   
   // Transform 2: Context Rendering (priority=100, runs after compression)
-  const contextTransform = new ContextTransform(
-    veilState,
-    compressionEngine,  // Same engine instance!
-    { maxTokens: 1000 }
-  );
-  space.addTransform(contextTransform);
+  const contextTransform = new ContextTransform({
+    compressionEngine: compressionEngine,
+    defaultOptions: { maxTokens: 1000 }
+  });
+  systemElement.addComponent(contextTransform);
   console.log(`   ✓ ContextTransform (priority=${contextTransform.priority})`);
   console.log('   → Execution order guaranteed: Compression → Context');
   console.log();
@@ -96,12 +100,18 @@ async function demonstrateCompression() {
     veilState
   );
   
+  // Attach agent via AgentComponent
+  const agentComponent = new AgentComponent(agent);
+  agentElement.addComponent(agentComponent);
+  
   console.log('   ✓ Agent created without compression parameter');
   console.log('   → Compression handled by transforms, not agent!');
   
   // Create effector to run agent
-  const agentEffector = new AgentEffector(agentElement, agent);
-  space.addEffector(agentEffector);
+  const agentEffector = new AgentEffector();
+  // Add to element instead of space (auto-registers with space)
+  agentElement.addComponent(agentEffector);
+  
   console.log('   ✓ AgentEffector registered (Phase 3)');
   console.log();
   
@@ -126,7 +136,7 @@ async function demonstrateCompression() {
             id: `user-msg-${i}`,
             agentId: 'user',
             agentName: 'User',
-            content: `This is test message #${i}. It helps demonstrate compression by filling up the frame history.`,
+            content: `This is test message #${i}. It helps demonstrate compression by filling up the frame history with significantly more tokens to ensure we hit the threshold. We need to generate enough tokens so that the SimpleTestCompressionEngine's internal logic (200 tokens per chunk) is triggered. Let's add some more text here just to be safe and sure that we are generating enough load for the system to react.`,
             streamId: 'demo',
             streamType: 'test'
           })

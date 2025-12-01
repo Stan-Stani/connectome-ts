@@ -123,13 +123,14 @@ const TOOLS = {
     }
   },
   searchFrames: {
-    description: 'Search frames for specific patterns',
+    description: 'Search frames for specific patterns. Returns lightweight match summaries with context snippets. Use getFrame(frameId) to inspect matching frames in detail.',
     parameters: {
       type: 'object',
       properties: {
         pattern: { type: 'string', description: 'Search pattern' },
         type: { type: 'string', enum: ['operation', 'event', 'error'], description: 'Frame type filter' },
-        limit: { type: 'number', description: 'Maximum results' }
+        limit: { type: 'number', description: 'Maximum frames to search through (default: 100)' },
+        maxResults: { type: 'number', description: 'Maximum matching results to return (default: 20)' }
       },
       required: ['pattern']
     }
@@ -251,7 +252,7 @@ async function processMessage(message: any) {
     switch (method) {
       case 'initialize':
         sendResponse(id, {
-          protocolVersion: '2025-06-18',
+          protocolVersion: '2024-11-05',
           capabilities: {
             tools: {}
           },

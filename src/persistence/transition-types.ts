@@ -20,7 +20,7 @@ export type ElementOperation =
  */
 export interface ComponentChange {
   elementRef: ElementRef;
-  componentClass: string;
+  componentType: string;
   componentIndex: number;
   property: string;
   oldValue: any;
@@ -31,8 +31,8 @@ export interface ComponentChange {
  * Component lifecycle operation
  */
 export type ComponentOperation =
-  | { type: 'add-component'; elementRef: ElementRef; componentClass: string; initialState?: any }
-  | { type: 'remove-component'; elementRef: ElementRef; componentClass: string; componentIndex: number };
+  | { type: 'add-component'; elementRef: ElementRef; componentType: string; initialState?: any }
+  | { type: 'remove-component'; elementRef: ElementRef; componentType: string; componentIndex: number };
 
 /**
  * Frame transition - captures all changes during a frame

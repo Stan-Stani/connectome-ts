@@ -3,15 +3,45 @@
  */
 
 import { FrameTransition } from '../persistence/transition-types';
+import type { ReadonlyVEILState, ReadonlyFrame } from '../veil/types';
 
 /**
- * Element reference that can survive serialization
+ * Execution context passed to components during frame processing
+ */
+export interface ExecutionContext {
+  event: SpaceEvent;
+  state: ReadonlyVEILState;
+  // Flattened metadata
+  sequence: number;
+  timestamp: string;
+
+  /**
+   * Readonly view of the current frame being processed.
+   * Provides access to frame metadata and deltas for inspection.
+   * Components CANNOT mutate the frame - use this.addOperation() instead.
+   */
+  frame: ReadonlyFrame;
+
+  /**
+   * Mutable buffer of OUTGOING events emitted during this frame.
+   * Components can inspect, modify, or cancel events emitted by earlier components
+   * before they are flushed to the main queue.
+   */
+  bufferedEvents: SpaceEvent[];
+}
+
+/**
+ * Component reference that can survive serialization
+ * (Named ElementRef for backwards compatibility)
  */
 export interface ElementRef {
-  elementId: string;
-  elementPath: string[];  // ["root", "discord", "channel-handler"]
+  elementId: string;      // Component ID
+  elementPath: string[];  // Path in component tree, e.g., ["root", "discord"]
   elementType?: string;   // Optional type hint
 }
+
+/** Alias for ElementRef - use in new code */
+export type ComponentRef = ElementRef;
 
 /**
  * Stream reference with metadata

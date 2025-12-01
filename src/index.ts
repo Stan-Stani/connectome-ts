@@ -47,38 +47,23 @@ export {
   TopicSubscription
 } from './spaces/types';
 export { Space } from './spaces/space';
-export { Element } from './spaces/element';
 export { Component as SpaceComponent } from './spaces/component';
+export { ComponentManager } from './spaces/component-manager';
 
 // Component base type export
 export * from './types/component';
 
-// MARTEM exports (Modulator/Afferent/Receptor/Transform/Effector/Maintainer)
+// FLEX component types and interfaces
 export * from './spaces/receptor-effector-types';
 
-// Base MARTEM implementations
-export * from './components/base-martem';
+// Base Afferent for external service integration
 export { BaseAfferent } from './components/base-afferent';
 
-// Migration adapters
-export {
-  VEILOperationReceptor,
-  ComponentToReceptorAdapter,
-  ComponentToEffectorAdapter
-} from './spaces/migration-adapters';
+// VEIL Operation Receptor
+export { VEILOperationReceptor } from './spaces/migration-adapters';
 
-// Export RETM type detection utilities
-export {
-  RETM_TYPE,
-  RETM_TYPES,
-  isModulator,
-  isReceptor,
-  isTransform,
-  isEffector,
-  isMaintainer,
-  isRETMComponent,
-  getRETMInterfaces
-} from './utils/retm-type-guards';
+// Legacy RETM type guards removed - FLEX uses priority-based component ordering
+// Components set their own priority property directly
 
 // Export priority grouping utility
 export { groupByPriority } from './utils/priorities';
@@ -91,22 +76,13 @@ export { ContinuationTransform } from './transforms/continuation-transform';
 export { CompressionTransform } from './transforms/compression-transform';
 export { FrameSnapshotTransform } from './transforms/frame-snapshot-transform';
 
-// Element tree system exports
-export { 
-  registerComponent,
-  ElementRequestReceptor,
-  ElementTreeTransform,
-  ElementTreeMaintainer
-} from './spaces/element-tree-receptors';
-
 // Validation exports
 export * from './validation/facet-validation';
 
 // Agent exports
 export * from './agent/types';
 export { BasicAgent } from './agent/basic-agent';
-export { AgentComponent } from './agent/agent-component';
-export { AgentEffector } from './agent/agent-effector';
+export { AgentComponent, AgentEffector } from './agent/agent-component';
 export { AgentElement } from './agent/agent-element';
 export { createBasicAgent, type CreateAgentOptions } from './agent/agent-factory';
 
@@ -130,16 +106,16 @@ export * from './widgets';
 
 // AXON exports
 export { createAxonEnvironment } from './axon/environment';
-export { createAxonEnvironmentV2 } from './axon/environment-v2';
-export { 
+export {
   IAxonManifest,
+  IAxonManifestExtended,
+  IAxonModuleExports,
   IAxonComponentConstructor,
   IComponent,
   IVEILComponent,
   IInteractiveComponent,
   IAxonEnvironment
 } from './axon/interfaces';
-export * from './axon/interfaces-v2';
 
 // Tracing exports
 export * from './tracing';
