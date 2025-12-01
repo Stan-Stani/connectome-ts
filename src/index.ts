@@ -32,15 +32,15 @@ export { DebugLLMProvider } from './llm/debug-llm-provider';
 export { debugLLMBridge } from './llm/debug-llm-bridge';
 export type { DebugLLMRequest } from './llm/debug-llm-bridge';
 
-// Space/Element exports
-export { 
+// Space/Component exports
+export {
   ComponentRef,
   SpaceEvent,
   FrameStartEvent,
   FrameEndEvent,
   TimeEvent,
-  ElementMountEvent,
-  ElementUnmountEvent,
+  ComponentMountEvent,
+  ComponentUnmountEvent,
   AgentResponseEvent,
   ComponentLifecycle,
   EventHandler,

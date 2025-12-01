@@ -39,9 +39,6 @@ export interface ComponentRef {
   componentType?: string;   // Optional type hint
 }
 
-/** @deprecated Use ComponentRef */
-export type ElementRef = ComponentRef;
-
 /**
  * Stream reference with metadata
  */
@@ -108,11 +105,6 @@ export interface ComponentMountEvent extends SpaceEvent<{ component: ComponentRe
 export interface ComponentUnmountEvent extends SpaceEvent<{ component: ComponentRef }> {
   topic: 'component:unmount';
 }
-
-/** @deprecated Use ComponentMountEvent */
-export type ElementMountEvent = ComponentMountEvent;
-/** @deprecated Use ComponentUnmountEvent */
-export type ElementUnmountEvent = ComponentUnmountEvent;
 
 /**
  * Agent response event for routing speak operations
