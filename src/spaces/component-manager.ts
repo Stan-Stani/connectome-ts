@@ -200,8 +200,10 @@ export class ComponentManager extends Component {
         }
       }
 
-      // Add to space
-      this.space.addComponent(component, componentId);
+      // Add to space - component class already has its constraints defined,
+      // no need to inject from facet. VEIL facet constraints are just persisted
+      // copies for inspection/debugging, not the source of truth.
+      this.space.addComponent(component, componentId, true);
 
       // Mark as instantiated
       this.instantiatedComponents.add(facetId);

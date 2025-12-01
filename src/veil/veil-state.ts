@@ -284,7 +284,7 @@ export class VEILStateManager {
           );
         }
 
-        // Handle other object-like fields that should merge deeply
+        // Handle other fields - deep merge plain objects, direct assign everything else
         for (const [key, value] of Object.entries(operation.changes)) {
           if (key === 'state' || key === 'content' || value === undefined) {
             continue;
@@ -292,7 +292,11 @@ export class VEILStateManager {
 
           const existingValue = (updated as any)[key];
           if (this.isPlainObject(existingValue) && this.isPlainObject(value)) {
+            // Deep merge plain objects
             (updated as any)[key] = this.deepMergeObjects(existingValue, value as Record<string, any>);
+          } else {
+            // Direct assignment for arrays, primitives, and other non-object types
+            (updated as any)[key] = value;
           }
         }
 
