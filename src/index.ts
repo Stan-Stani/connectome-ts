@@ -33,7 +33,7 @@ export { debugLLMBridge } from './llm/debug-llm-bridge';
 export type { DebugLLMRequest } from './llm/debug-llm-bridge';
 
 // Space/Element exports
-export { 
+export {
   ElementRef,
   SpaceEvent,
   FrameStartEvent,
@@ -49,6 +49,55 @@ export {
 export { Space } from './spaces/space';
 export { Component as SpaceComponent } from './spaces/component';
 export { ComponentManager } from './spaces/component-manager';
+
+// Constraint types and factories
+export {
+  ComponentConstraintFacet,
+  PriorityConstraintFacet,
+  BeforeComponentTypeConstraint,
+  AfterComponentTypeConstraint,
+  BeforeComponentIdConstraint,
+  AfterComponentIdConstraint,
+  ConstraintFacet,
+  ComponentPriority,
+  priorityConstraint,
+  beforeComponentType,
+  afterComponentType,
+  beforeComponentId,
+  afterComponentId
+} from './spaces/constraints';
+
+// Component ordering strategies
+export {
+  ComponentOrderingStrategy,
+  PriorityOrderingStrategy,
+  MultiConstraintOrderingStrategy,
+  MultiConstraintOrderingOptions,
+  MultiConstraintOrderingResult
+} from './spaces/ordering/component-ordering';
+
+// Constraint graph types (for advanced usage)
+export {
+  ConstraintEdge,
+  ConstraintNode,
+  ConstraintConflict,
+  ConflictType,
+  ConstraintGraphResult,
+  ConstraintGraphBuilder
+} from './spaces/ordering/constraint-graph';
+
+// Topological sort types (for advanced usage)
+export {
+  TopologicalSortResult,
+  TopologicalSorter
+} from './spaces/ordering/topological-sort';
+
+// Ordering diagnostics
+export {
+  OrderingSummary,
+  OrderingDiagnosticsFormatter,
+  validateOrderingResult
+} from './spaces/ordering/ordering-diagnostics';
 
 // Component base type export
 export * from './types/component';
