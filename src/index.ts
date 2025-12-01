@@ -34,7 +34,7 @@ export type { DebugLLMRequest } from './llm/debug-llm-bridge';
 
 // Space/Element exports
 export { 
-  ElementRef,
+  ComponentRef,
   SpaceEvent,
   FrameStartEvent,
   FrameEndEvent,
@@ -141,7 +141,7 @@ export {
   friendlyId,
   // Event and reference factories
   createSpaceEvent,
-  createElementRef,
+  createComponentRef,
   createAgentActivation,
   // Facet creation factories (with validation)
   createSpeechFacet,

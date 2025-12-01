@@ -335,8 +335,7 @@ export abstract class InteractiveComponent extends VEILComponent {
         attributes: {
           toolName,
           actionName: name,
-          elementId: this.id, // For backward compatibility in action effector
-          componentId: this.id, // New standard
+          componentId: this.id,
           parameters: config?.params || {},
           description: config?.description || `Perform ${name} action`
         }

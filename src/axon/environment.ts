@@ -84,8 +84,7 @@ export function createAxonEnvironment(): IAxonEnvironment {
       constructor(
         public topic: string,
         public source: any,
-        public payload?: any,
-        public broadcast?: boolean
+        public payload?: any
       ) {}
     } as any,
 

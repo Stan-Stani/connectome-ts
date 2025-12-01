@@ -32,16 +32,15 @@ export interface ExecutionContext {
 
 /**
  * Component reference that can survive serialization
- * (Named ElementRef for backwards compatibility)
  */
-export interface ElementRef {
-  elementId: string;      // Component ID
-  elementPath: string[];  // Path in component tree, e.g., ["root", "discord"]
-  elementType?: string;   // Optional type hint
+export interface ComponentRef {
+  componentId: string;      // Component ID
+  componentPath: string[];  // Path in component tree, e.g., ["root", "discord"]
+  componentType?: string;   // Optional type hint
 }
 
-/** Alias for ElementRef - use in new code */
-export type ComponentRef = ElementRef;
+/** @deprecated Use ComponentRef */
+export type ElementRef = ComponentRef;
 
 /**
  * Stream reference with metadata
@@ -62,38 +61,15 @@ export interface StreamRef {
 export type EventPriority = 'immediate' | 'high' | 'normal' | 'low';
 
 /**
- * Event propagation phases (DOM-style)
- */
-export enum EventPhase {
-  NONE = 0,
-  CAPTURING_PHASE = 1,
-  AT_TARGET = 2,
-  BUBBLING_PHASE = 3
-}
-
-/**
  * Base event class for the Space system
  */
 export interface SpaceEvent<T = unknown> {
   topic: string;  // "discord.message", "timer.expired", "agent.response"
-  source: ElementRef;
+  source: ComponentRef;
   payload: T;
   timestamp: number;
   priority?: EventPriority;  // Defaults to 'normal'
   metadata?: Record<string, any>;
-  
-  // Propagation control
-  bubbles?: boolean;  // Whether event bubbles up (default: true)
-  cancelable?: boolean;  // Whether propagation can be stopped (default: true)
-  broadcast?: boolean;  // Whether event should reach all subscribers regardless of tree position (default: true)
-  
-  // Runtime state (set by the event system)
-  eventPhase?: EventPhase;
-  currentTarget?: ElementRef;
-  target?: ElementRef;
-  defaultPrevented?: boolean;
-  propagationStopped?: boolean;
-  immediatePropagationStopped?: boolean;
 }
 
 /**
@@ -123,15 +99,20 @@ export interface TimeEvent extends SpaceEvent<{
 }
 
 /**
- * Element lifecycle events
+ * Component lifecycle events
  */
-export interface ElementMountEvent extends SpaceEvent<{ element: ElementRef }> {
-  topic: 'element:mount';
+export interface ComponentMountEvent extends SpaceEvent<{ component: ComponentRef }> {
+  topic: 'component:mount';
 }
 
-export interface ElementUnmountEvent extends SpaceEvent<{ element: ElementRef }> {
-  topic: 'element:unmount';
+export interface ComponentUnmountEvent extends SpaceEvent<{ component: ComponentRef }> {
+  topic: 'component:unmount';
 }
+
+/** @deprecated Use ComponentMountEvent */
+export type ElementMountEvent = ComponentMountEvent;
+/** @deprecated Use ComponentUnmountEvent */
+export type ElementUnmountEvent = ComponentUnmountEvent;
 
 /**
  * Agent response event for routing speak operations

@@ -3,7 +3,7 @@
  */
 
 import { VEILState, Frame, StreamRef } from '../veil/types';
-import { ElementRef } from '../spaces/types';
+import { ComponentRef } from '../spaces/types';
 import type { RenderedContext } from '../hud/types-v2';
 
 /**

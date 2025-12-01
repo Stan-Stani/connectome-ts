@@ -1,5 +1,5 @@
 import type { Frame, StreamRef } from '../veil/types';
-import type { SpaceEvent, EventPhase } from '../spaces/types';
+import type { SpaceEvent } from '../spaces/types';
 import type { RenderedContext } from '../hud/types-v2';
 import type { ComponentConstraintFacet } from '../spaces/constraints';
 
@@ -65,7 +65,6 @@ export interface DebugAgentFrameContext {
 }
 
 export interface DebugEventContext {
-  phase: EventPhase;
   targetId?: string;
 }
 

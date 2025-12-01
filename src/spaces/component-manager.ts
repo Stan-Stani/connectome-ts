@@ -65,7 +65,7 @@ export class ComponentManager extends Component {
 
     // Generate component ID
     let componentId = payload.componentId;
-    const parentId = payload.parentId || payload.elementId;
+    const parentId = payload.parentId || payload.componentId;
     if (!componentId && parentId) {
       if (parentId !== 'root') {
         componentId = `${parentId}:${componentType}`;
@@ -88,7 +88,7 @@ export class ComponentManager extends Component {
     const facet = createComponentStateFacet({
       componentId,
       componentType,
-      elementId: parentId || 'root',
+      parentId: parentId || 'root',
       initialState: config,
       constraints: payload.priority !== undefined
         ? [priorityConstraint(payload.priority)]

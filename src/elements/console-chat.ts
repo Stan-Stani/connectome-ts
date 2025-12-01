@@ -117,9 +117,9 @@ export class ConsoleChatComponent extends Component {
             topic: 'console:closing',
             payload: {},
             source: {
-              elementId: this.id || 'console',
-              elementPath: ['root', this.id || 'console'],
-              elementType: this.constructor.name
+              componentId: this.id || 'console',
+              componentPath: ['root', this.id || 'console'],
+              componentType: this.constructor.name
             },
             timestamp: Date.now()
           });

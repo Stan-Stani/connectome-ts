@@ -10,7 +10,7 @@ import type { Space } from '../spaces/space';
 import { VEILStateManager } from '../veil/veil-state';
 import type { Frame, Facet, StreamRef, StreamInfo } from '../veil/types';
 import { hasContentAspect } from '../veil/types';
-import type { SpaceEvent, ElementRef } from '../spaces/types';
+import type { SpaceEvent, ComponentRef } from '../spaces/types';
 import type { DebugObserver, DebugFrameStartContext, DebugFrameCompleteContext, DebugEventContext, DebugAgentFrameContext, DebugComponentSnapshot, ComponentExecutionRecord } from './types';
 import { deterministicUUID } from '../utils/uuid';
 import type { Component } from '../spaces/component';
@@ -42,10 +42,8 @@ const FACET_TREE_MAX_DEPTH = 10;
 interface DebugEventRecord {
   id: string;
   topic: string;
-  source: ElementRef;
-  target?: ElementRef;
+  source: ComponentRef;
   payload: any;
-  phase: string;
   timestamp: number;
 }
 
@@ -200,9 +198,7 @@ class DebugStateTracker extends EventEmitter implements DebugObserver {
       id: deterministicUUID(`${record.uuid}:${record.events.length}`),
       topic: event.topic,
       source: sanitizePayload(event.source),
-      target: sanitizePayload(event.target),
       payload: sanitizePayload(event.payload),
-      phase: EventPhaseName[context.phase] || 'unknown',
       timestamp: event.timestamp
     };
 
@@ -363,8 +359,8 @@ function inferFrameKind(
     const hasAgentEvents = frame.events.some(event => {
       if (event?.topic === 'veil:operation' && event.source) {
         // Check if source is an agent element/component
-        return event.source.elementId?.includes('agent') || 
-               event.source.elementType?.includes('Agent');
+        return event.source.componentId?.includes('agent') || 
+               event.source.componentType?.includes('Agent');
       }
       return false;
     });
@@ -387,19 +383,10 @@ function sanitizeFrameEvents(
     id: deterministicUUID(`${recordUuid}:evt:${index}`),
     topic: event.topic,
     source: sanitizePayload(event.source),
-    target: sanitizePayload(event.target),
     payload: sanitizePayload(event.payload),
-    phase: event.eventPhase !== undefined ? (EventPhaseName[event.eventPhase] || 'unknown') : 'unknown',
     timestamp: event.timestamp
   }));
 }
-
-const EventPhaseName: Record<number, string> = {
-  0: 'none',
-  1: 'capturing',
-  2: 'target',
-  3: 'bubbling'
-};
 
 interface SerializedComponent {
   type: string;
@@ -764,7 +751,7 @@ export class DebugServer {
       }
       
       // Resolve source ref from ID (or default to space)
-      let sourceRef: ElementRef;
+      let sourceRef: ComponentRef;
       if (sourceId) {
           const comp = this.space.getComponentById(sourceId);
           sourceRef = comp ? comp.getRef() : this.space.getRef();

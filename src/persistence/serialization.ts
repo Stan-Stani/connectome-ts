@@ -322,7 +322,7 @@ function serializeFacet(facet: Facet): any {
       const componentStateFacet = facet as ComponentStateFacet;
       serialized.componentType = componentStateFacet.componentType;
       serialized.componentId = componentStateFacet.componentId;
-      serialized.elementId = componentStateFacet.elementId;
+      serialized.parentId = componentStateFacet.parentId;
       break;
     }
   }

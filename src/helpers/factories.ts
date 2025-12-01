@@ -5,7 +5,7 @@
 
 import type { 
   SpaceEvent, 
-  ElementRef
+  ComponentRef
 } from '../spaces/types';
 import type {
   VEILDelta,
@@ -301,7 +301,7 @@ export function createInternalStateFacet(init: InternalStateFacetInit): Internal
 /**
  * Creates a properly structured SpaceEvent
  * @param topic - The event topic
- * @param source - Either an Element instance or a string ID (will create a minimal ElementRef)
+ * @param source - Either an Element instance or a string ID (will create a minimal ComponentRef)
  * @param payload - Optional event payload
  * @returns A valid SpaceEvent
  * 
@@ -314,27 +314,27 @@ export function createInternalStateFacet(init: InternalStateFacetInit): Internal
  */
 export function createSpaceEvent(
   topic: string,
-  source: { id: string; getPath?: () => string[]; constructor: { name: string } } | string | ElementRef,
+  source: { id: string; getPath?: () => string[]; constructor: { name: string } } | string | ComponentRef,
   payload?: any
 ): SpaceEvent {
-  let elementRef: ElementRef;
+  let elementRef: ComponentRef;
   
   if (typeof source === 'string') {
-    // Create minimal ElementRef from string ID
+    // Create minimal ComponentRef from string ID
     elementRef = {
-      elementId: source,
-      elementPath: ['root'],
-      elementType: 'Component'
+      componentId: source,
+      componentPath: ['root'],
+      componentType: 'Component'
     };
-  } else if ('elementId' in source && 'elementPath' in source) {
-    // Already an ElementRef
-    elementRef = source as ElementRef;
+  } else if ('componentId' in source && 'componentPath' in source) {
+    // Already an ComponentRef
+    elementRef = source as ComponentRef;
   } else {
     // It's a Component-like object, extract the ref
     elementRef = {
-      elementId: source.id,
-      elementPath: source.getPath ? source.getPath() : ['root', source.id],
-      elementType: source.constructor.name
+      componentId: source.id,
+      componentPath: source.getPath ? source.getPath() : ['root', source.id],
+      componentType: source.constructor.name
     };
   }
   
@@ -347,34 +347,34 @@ export function createSpaceEvent(
 }
 
 /**
- * Creates an ElementRef from various input types
- * @param elementOrId - Component instance, existing ElementRef, or string ID
- * @returns A valid ElementRef
+ * Creates an ComponentRef from various input types
+ * @param elementOrId - Component instance, existing ComponentRef, or string ID
+ * @returns A valid ComponentRef
  * 
  * @example
- * const ref = createElementRef(myComponent);
- * const ref2 = createElementRef('my-component-id');
- * const ref3 = createElementRef(existingRef); // passes through
+ * const ref = createComponentRef(myComponent);
+ * const ref2 = createComponentRef('my-component-id');
+ * const ref3 = createComponentRef(existingRef); // passes through
  */
-export function createElementRef(elementOrId: { id: string; getPath?: () => string[]; constructor: { name: string } } | ElementRef | string): ElementRef {
+export function createComponentRef(elementOrId: { id: string; getPath?: () => string[]; constructor: { name: string } } | ComponentRef | string): ComponentRef {
   if (typeof elementOrId === 'string') {
     return {
-      elementId: elementOrId,
-      elementPath: ['root'],
-      elementType: 'Component'
+      componentId: elementOrId,
+      componentPath: ['root'],
+      componentType: 'Component'
     };
   }
-  
-  if ('elementId' in elementOrId && 'elementPath' in elementOrId) {
-    // Already an ElementRef
-    return elementOrId as ElementRef;
+
+  if ('componentId' in elementOrId && 'componentPath' in elementOrId) {
+    // Already an ComponentRef
+    return elementOrId as ComponentRef;
   }
-  
+
   // It's a Component
   return {
-    elementId: elementOrId.id,
-    elementPath: elementOrId.getPath ? elementOrId.getPath() : ['root', elementOrId.id],
-    elementType: elementOrId.constructor.name
+    componentId: elementOrId.id,
+    componentPath: elementOrId.getPath ? elementOrId.getPath() : ['root', elementOrId.id],
+    componentType: elementOrId.constructor.name
   };
 }
 
@@ -470,7 +470,7 @@ export const changeFacet = rewriteFacet;  // Backward compat
 export function createComponentStateFacet(init: {
   componentId: string;
   componentType: string;
-  elementId: string;
+  parentId?: string;
   initialState?: Record<string, any>;
   constraints?: ConstraintFacet[];
 }): Facet {
@@ -492,7 +492,7 @@ export function createComponentStateFacet(init: {
     type: 'component-state',
     componentType: init.componentType,
     componentId: init.componentId,
-    elementId: init.elementId,
+    parentId: init.parentId || 'root',
     state: init.initialState || {},
     children: [constraintsChildFacet]
   } as any;

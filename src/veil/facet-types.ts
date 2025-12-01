@@ -156,7 +156,7 @@ export type ComponentStateFacet = BaseFacet & StateAspect & {
   type: 'component-state';
   componentType: string;  // e.g., 'discord-afferent', 'rate-limit-effector'
   componentId: string;    // Unique instance ID
-  elementId: string;      // Owning element
+  parentId?: string;      // Parent component/space ID
 };
 
 /**
@@ -259,8 +259,8 @@ export type ActionDefinitionFacet = BaseFacet & StateAspect<{
  * Element tree structure facet (infrastructure)
  */
 export type ElementTreeFacet = BaseFacet & StateAspect<{
-  elementId: string;
-  elementType: string;
+  componentId: string;
+  componentType: string;
   parentId: string | null;
   name: string;
   active: boolean;
@@ -278,7 +278,7 @@ export type ElementTreeFacet = BaseFacet & StateAspect<{
  */
 export type ElementRequestFacet = BaseFacet & StateAspect<{
   parentId: string | null;
-  elementType: string;
+  componentType: string;
   name: string;
   components?: Array<{
     type: string;
@@ -296,7 +296,7 @@ export type ComponentRequestFacet = BaseFacet & StateAspect<{
   componentType: string;
 
   /** Parent element ID */
-  elementId: string;
+  componentId: string;
 
   /** Component priority for FLEX ordering */
   priority?: number;

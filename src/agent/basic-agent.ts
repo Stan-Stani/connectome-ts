@@ -274,8 +274,7 @@ export class BasicAgent implements AgentInterface {
         topic: ev.topic,
         payload: ev.payload,
         timestamp: Date.now(),
-        source: { elementId: 'agent', elementPath: [], elementType: 'Agent' },
-        phase: 'unknown' as const
+        source: { componentId: 'agent', componentPath: [], componentType: 'Agent' }
       }));
 
       const frame: Frame = {
@@ -565,7 +564,7 @@ export class BasicAgent implements AgentInterface {
    * Register multiple actions for an element at once
    */
   registerElementActions(element: Component | string, actions: Record<string, string | ActionConfig>): void {
-    const elementId = typeof element === 'string' ? element : element.id;
+    const componentId = typeof element === 'string' ? element : element.id;
     
     for (const [actionName, config] of Object.entries(actions)) {
       const description = typeof config === 'string' ? config : config.description;
@@ -590,10 +589,10 @@ export class BasicAgent implements AgentInterface {
       }
       
       this.registerTool({
-        name: `${elementId}.${actionName}`,
+        name: `${componentId}.${actionName}`,
         description,
         parameters,
-        elementPath: [elementId],
+        componentPath: [componentId],
         emitEvent: {
           topic: 'element:action',
           payloadTemplate: {}
@@ -630,7 +629,7 @@ export class BasicAgent implements AgentInterface {
         // Skip if already registered
         if (this.tools.has(toolName)) continue;
         
-        const elementId = attrs.elementId;
+        const componentId = attrs.componentId;
         const actionName = attrs.actionName;
         
         // Register tool from VEIL facet
@@ -638,7 +637,7 @@ export class BasicAgent implements AgentInterface {
           name: toolName,
           description: attrs.description || facet.content || `Call ${toolName}`,
           parameters: attrs.parameters || {},
-          elementPath: elementId ? [elementId] : [],
+          componentPath: componentId ? [componentId] : [],
           emitEvent: {
             topic: 'element:action',
             payloadTemplate: {}
@@ -669,7 +668,7 @@ export class BasicAgent implements AgentInterface {
         name: toolOrName,
         description: `Perform ${toolOrName} action`,
         parameters: {},
-        elementPath: parts.slice(0, -1),
+        componentPath: parts.slice(0, -1),
         emitEvent: {
           topic: 'element:action',
           payloadTemplate: {}

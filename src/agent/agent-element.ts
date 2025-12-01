@@ -21,7 +21,7 @@ export class AgentElement extends Component {
     const ref = super.getRef();
     return {
       ...ref,
-      elementType: 'AgentElement'
+      componentType: 'AgentElement'
     };
   }
 }

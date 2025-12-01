@@ -1,5 +1,5 @@
 import { Component } from './component';
-import { SpaceEvent, FrameStartEvent, FrameEndEvent, StreamRef, ElementRef } from './types';
+import { SpaceEvent, FrameStartEvent, FrameEndEvent, StreamRef, ComponentRef } from './types';
 import { VEILStateManager } from '../veil/veil-state';
 import { Frame, Facet, VEILDelta, AgentInfo, createDefaultTransition } from '../veil/types';
 import { 
@@ -373,7 +373,7 @@ export class Space {
             type: 'component-state',
             componentType,
             componentId,
-            elementId: 'root', // Components are attached to Space (root element)
+            parentId: 'root', // Components are attached to Space (root)
             state: {},
             children: [constraintsChildFacet]
           }
@@ -495,7 +495,7 @@ export class Space {
       operation: 'queueEvent',
       data: {
         topic: event.topic,
-        source: event.source.elementId,
+        source: event.source.componentId,
         priority: event.priority || 'normal',
         queueLength: this.eventQueue.length,
         queueState: this.eventQueue.getDebugInfo()
@@ -522,11 +522,11 @@ export class Space {
   /**
    * Get a reference to this Space
    */
-  getRef(): ElementRef {
+  getRef(): ComponentRef {
     return {
-      elementId: this.id,
-      elementPath: ['root'],
-      elementType: 'Space'
+      componentId: this.id,
+      componentPath: ['root'],
+      componentType: 'Space'
     };
   }
   
@@ -647,7 +647,6 @@ export class Space {
              eventBufferSnapshot: this.frameEventBuffer.map(evt => ({
                topic: evt.topic,
                source: evt.source,
-               target: evt.target,
                payload: evt.payload
              }))
            };
@@ -682,7 +681,6 @@ export class Space {
                 emittedEventDetails = this.frameEventBuffer.slice(startEventBufferCount).map(evt => ({
                   topic: evt.topic,
                   source: evt.source,
-                  target: evt.target,
                   payload: evt.payload
                 }));
               }

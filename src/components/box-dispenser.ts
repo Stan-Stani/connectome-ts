@@ -192,10 +192,8 @@ export class DispenseButtonComponent extends VEILComponent {
     // Emit button press event
     this.emit({
       topic: 'button:pressed',
-      // source: this.getRef(), // Auto-filled by emit()
       payload: {},
-      timestamp: Date.now(),
-      bubbles: true // Let it bubble up to dispenser
+      timestamp: Date.now()
     });
   }
 }

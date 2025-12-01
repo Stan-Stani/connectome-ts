@@ -179,15 +179,15 @@ export class DebugServerClient {
     }
   }
 
-  async getElementTree(elementId?: string, depth?: number): Promise<any> {
+  async getElementTree(componentId?: string, depth?: number): Promise<any> {
     // Use /api/state to get the space structure
     // The debug server returns space.children which is the element tree
     const state = await this.getState();
     return state.space || {};
   }
 
-  async getElement(elementId: string): Promise<any> {
-    const response = await fetch(`${this.baseUrl}/api/elements/${elementId}`);
+  async getElement(componentId: string): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/api/elements/${componentId}`);
     if (!response.ok) {
       throw new Error(`Debug server returned ${response.status}`);
     }
@@ -241,7 +241,7 @@ export class DebugServerClient {
         name: c.type,
         type: c.martemPhase || 'component',
         id: c.id,
-        elementId: c.id
+        componentId: c.id
       })));
     }
 
@@ -253,7 +253,7 @@ export class DebugServerClient {
             name: c.type,
             type: c.martemPhase || 'component',
             id: c.id,
-            elementId: child.id
+            componentId: child.id
           })));
         }
       }

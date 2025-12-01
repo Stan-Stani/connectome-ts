@@ -6,7 +6,7 @@
 import { Space } from '../spaces/space';
 import { Component } from '../spaces/component';
 import { VEILStateManager } from '../veil/veil-state';
-import { SpaceEvent, FrameEndEvent, ElementRef } from '../spaces/types';
+import { SpaceEvent, FrameEndEvent, ComponentRef } from '../spaces/types';
 import { Frame } from '../veil/types';
 import {
   FrameTransition,

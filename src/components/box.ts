@@ -2,7 +2,6 @@ import { Component } from '../spaces/component';
 import { Space } from '../spaces/space';
 import { StateComponent, InteractiveComponent } from './base-components';
 import { SpaceEvent } from '../spaces/types';
-import { stopPropagation } from '../spaces/event-utils';
 
 /**
  * Box configuration

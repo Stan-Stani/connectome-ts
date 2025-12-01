@@ -77,9 +77,9 @@ const TOOLS = {
     parameters: {
       type: 'object',
       properties: {
-        elementId: { type: 'string', description: 'Element ID' }
+        componentId: { type: 'string', description: 'Element ID' }
       },
-      required: ['elementId']
+      required: ['componentId']
     }
   },
   updateElementProps: {
@@ -87,10 +87,10 @@ const TOOLS = {
     parameters: {
       type: 'object',
       properties: {
-        elementId: { type: 'string', description: 'Element ID' },
+        componentId: { type: 'string', description: 'Element ID' },
         props: { type: 'object', description: 'Properties to update' }
       },
-      required: ['elementId', 'props']
+      required: ['componentId', 'props']
     }
   },
   injectEvent: {
@@ -153,7 +153,7 @@ const TOOLS = {
     parameters: {
       type: 'object',
       properties: {
-        elementId: { type: 'string', description: 'Starting element ID (omit for root)' },
+        componentId: { type: 'string', description: 'Starting element ID (omit for root)' },
         depth: { type: 'number', description: 'Maximum depth to traverse' }
       }
     }

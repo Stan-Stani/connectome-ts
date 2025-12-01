@@ -48,7 +48,7 @@ export class ControlPanelActionsReceptor extends Component {
         attributes: {
           toolName: `${targetId}.open`,
           actionName: 'open',
-          elementId: targetId, // Use friendly ID for action routing
+          componentId: targetId, // Use friendly ID for action routing
           description: `Open the ${payload.displayName} panel to access its tools`,
           parameters: {},
           category: payload.panelId
@@ -75,7 +75,7 @@ export class ControlPanelActionsReceptor extends Component {
         attributes: {
           toolName: `${targetId}.close`,
           actionName: 'close',
-          elementId: targetId, // Use friendly ID for action routing
+          componentId: targetId, // Use friendly ID for action routing
           description: `Close the ${payload.displayName} panel`,
           parameters: {},
           category: payload.panelId,
@@ -110,7 +110,7 @@ export class ControlPanelActionsReceptor extends Component {
           attributes: {
             toolName,
             actionName: tool.name,
-            elementId: targetId, // Use friendly ID for action routing
+            componentId: targetId, // Use friendly ID for action routing
             description: tool.description || `Perform ${tool.name} action`,
             parameters: tool.params || {},
             category: tool.category,

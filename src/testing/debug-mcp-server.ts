@@ -219,8 +219,8 @@ export class ConnectomeDebugMCP {
    * Get a specific element by ID
    * @tool
    */
-  async getElement(params: { elementId: string }): Promise<any> {
-    return this.fetchJSON(`/api/elements/${params.elementId}`);
+  async getElement(params: { componentId: string }): Promise<any> {
+    return this.fetchJSON(`/api/elements/${params.componentId}`);
   }
   
   /**
@@ -228,10 +228,10 @@ export class ConnectomeDebugMCP {
    * @tool
    */
   async updateElementProps(params: {
-    elementId: string;
+    componentId: string;
     props: Record<string, any>;
   }): Promise<{ success: boolean }> {
-    await this.fetchJSON(`/api/elements/${params.elementId}/props`, {
+    await this.fetchJSON(`/api/elements/${params.componentId}/props`, {
       method: 'PUT',
       body: JSON.stringify(params.props)
     });
@@ -467,10 +467,10 @@ export class ConnectomeDebugMCP {
    * Get element tree starting from a specific element or root
    * @tool
    */
-  async getElementTree(params: { elementId?: string; depth?: number } = {}): Promise<any> {
+  async getElementTree(params: { componentId?: string; depth?: number } = {}): Promise<any> {
     const state = await this.getState();
     
-    if (!params.elementId) {
+    if (!params.componentId) {
       return state.space;
     }
     
@@ -488,7 +488,7 @@ export class ConnectomeDebugMCP {
       return null;
     };
     
-    return findElement(state.space, params.elementId);
+    return findElement(state.space, params.componentId);
   }
   
   /**

@@ -1109,7 +1109,7 @@ export class VEILStateManager {
     // Emit recovery complete event
     space.emit({
       topic: 'system:recovery-complete',
-      source: { elementId: 'system', elementPath: ['system'] },
+      source: { componentId: 'system', componentPath: ['system'] },
       payload: {
         reason: 'frame-deletion',
         previousSequence,

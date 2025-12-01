@@ -1,4 +1,4 @@
-import { ComponentLifecycle, EventHandler, SpaceEvent, ElementRef, ExecutionContext } from './types';
+import { ComponentLifecycle, EventHandler, SpaceEvent, ComponentRef, ExecutionContext } from './types';
 import type { Space } from './space';
 import type { VEILDelta } from '../veil/types';
 import {
@@ -268,21 +268,13 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
   }
   
   /**
-   * Get the component's ID (legacy alias for backwards compatibility)
-   * @deprecated Use `id` property directly
-   */
-  protected get elementId(): string {
-    return this.id;
-  }
-
-  /**
    * Get a reference to this component
    */
-  public getRef(): ElementRef {
+  public getRef(): ComponentRef {
     return {
-      elementId: this.id,        // Component ID
-      elementPath: ['root', this.id],
-      elementType: this.constructor.name
+      componentId: this.id,
+      componentPath: ['root', this.id],
+      componentType: this.constructor.name
     };
   }
 
@@ -308,7 +300,7 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
     
     const veilState = (this.space as any).getVEILState().getState();
     const componentId = this.getComponentId();
-    // Legacy format was "component-state:elementId:Type:Index"
+    // Legacy format was "component-state:componentId:Type:Index"
     // Now simplified to "component-state:componentId"
     const stateFacet = veilState.facets.get(`component-state:${componentId}`);
     
