@@ -10,13 +10,20 @@ import { ComponentRegistry } from './persistence/component-registry';
 
 // Core components
 import { AgentComponent } from './agent/agent-component';
+import { ActionEffector } from './spaces/action-effector';
+import { ContextTransform } from './hud/context-transform';
 import { ConsoleChatComponent } from './elements/console-chat';
 import { SpaceNotesComponent } from './components/space-notes';
+import { AxonLoaderComponent } from './components/axon-loader';
 
 // Register core components
 ComponentRegistry.register('AgentComponent', AgentComponent);
+ComponentRegistry.register('AgentEffector', AgentComponent); // Backwards compatibility alias
+ComponentRegistry.register('ActionEffector', ActionEffector);
+ComponentRegistry.register('ContextTransform', ContextTransform);
 ComponentRegistry.register('ConsoleChatComponent', ConsoleChatComponent);
 ComponentRegistry.register('SpaceNotesComponent', SpaceNotesComponent);
+ComponentRegistry.register('AxonLoaderComponent', AxonLoaderComponent);
 
 // Temporary: Register test components
 // TODO: Move these to AXON extensions

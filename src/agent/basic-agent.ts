@@ -24,7 +24,7 @@ import { RenderedContext } from '../hud/types-v2';
 import { FrameTrackingHUD } from '../hud/frame-tracking-hud';
 import { LLMProvider } from '../llm/llm-interface';
 import { VEILStateManager } from '../veil/veil-state';
-import { Element } from '../spaces/element';
+import { Component } from '../spaces/component';
 import { 
   TraceStorage, 
   TraceCategory, 
@@ -33,6 +33,7 @@ import {
 import { BasicAgentConstructorOptions, isAgentOptions } from './agent-factory';
 import { SpaceEvent } from '../spaces/types';
 import { parseInlineParameters } from './action-parser';
+import { stripTurnMarkers } from '../utils/turn-markers';
 
 export class BasicAgent implements AgentInterface {
   private state: AgentState = {
@@ -273,8 +274,7 @@ export class BasicAgent implements AgentInterface {
         topic: ev.topic,
         payload: ev.payload,
         timestamp: Date.now(),
-        source: { elementId: 'agent', elementPath: [], elementType: 'Agent' },
-        phase: 'unknown' as const
+        source: { componentId: 'agent', componentPath: [], componentType: 'Agent' }
       }));
 
       const frame: Frame = {
@@ -306,9 +306,8 @@ export class BasicAgent implements AgentInterface {
     const events: Array<{ topic: string; payload: any }> = [];
     let hasMoreToSay = false;
     
-    // The model outputs plain text without <my_turn> tags
-    // The HUD handles formatting when rendering
-    let turnContent = completion;
+    // Normalize turn markers so downstream rendering doesn't double-wrap agent turns
+    let turnContent = stripTurnMarkers(completion);
     
     // For now, assume the turn is complete if we got a response
     // In a real implementation, we'd check if we hit max tokens
@@ -460,7 +459,7 @@ export class BasicAgent implements AgentInterface {
     protectedSpeech = protectedSpeech.replace(/\{@[\w.-]+(?:\s*\([^)]*\)|\s*\{[\s\S]*?\})?\}/g, '');
     
     // Restore backticks
-    speechContent = protectedSpeech;
+    speechContent = stripTurnMarkers(protectedSpeech);
     speechBacktickPlaceholders.forEach((original, index) => {
       speechContent = speechContent.replace(`__SPEECH_BACKTICK_${index}__`, original);
     });
@@ -524,10 +523,19 @@ export class BasicAgent implements AgentInterface {
    * Register an element's actions automatically
    * Called by Space when elements are added
    */
-  registerElementAutomatically(element: Element): void {
+  registerElementAutomatically(element: Component): void {
     if (!this._autoActionRegistration) return;
     
     // Look for components with declared actions
+    const componentClass = element.constructor as any;
+    const declaredActions = componentClass.actions;
+    
+    if (declaredActions && Object.keys(declaredActions).length > 0) {
+      this.registerElementActions(element, declaredActions);
+    }
+    
+    /*
+    // Deprecated: logic for iterating components of an element
     const components = (element as any)._components || [];
     
     for (const component of components) {
@@ -539,6 +547,7 @@ export class BasicAgent implements AgentInterface {
         this.registerElementActions(element, declaredActions);
       }
     }
+    */
     
     // Special case: if it's a box with no declared actions, add a generic open action
     if (element.id.startsWith('box-')) {
@@ -554,8 +563,8 @@ export class BasicAgent implements AgentInterface {
   /**
    * Register multiple actions for an element at once
    */
-  registerElementActions(element: Element | string, actions: Record<string, string | ActionConfig>): void {
-    const elementId = typeof element === 'string' ? element : element.id;
+  registerElementActions(element: Component | string, actions: Record<string, string | ActionConfig>): void {
+    const componentId = typeof element === 'string' ? element : element.id;
     
     for (const [actionName, config] of Object.entries(actions)) {
       const description = typeof config === 'string' ? config : config.description;
@@ -580,10 +589,10 @@ export class BasicAgent implements AgentInterface {
       }
       
       this.registerTool({
-        name: `${elementId}.${actionName}`,
+        name: `${componentId}.${actionName}`,
         description,
         parameters,
-        elementPath: [elementId],
+        componentPath: [componentId],
         emitEvent: {
           topic: 'element:action',
           payloadTemplate: {}
@@ -620,7 +629,7 @@ export class BasicAgent implements AgentInterface {
         // Skip if already registered
         if (this.tools.has(toolName)) continue;
         
-        const elementId = attrs.elementId;
+        const componentId = attrs.componentId;
         const actionName = attrs.actionName;
         
         // Register tool from VEIL facet
@@ -628,7 +637,7 @@ export class BasicAgent implements AgentInterface {
           name: toolName,
           description: attrs.description || facet.content || `Call ${toolName}`,
           parameters: attrs.parameters || {},
-          elementPath: elementId ? [elementId] : [],
+          componentPath: componentId ? [componentId] : [],
           emitEvent: {
             topic: 'element:action',
             payloadTemplate: {}
@@ -659,7 +668,7 @@ export class BasicAgent implements AgentInterface {
         name: toolOrName,
         description: `Perform ${toolOrName} action`,
         parameters: {},
-        elementPath: parts.slice(0, -1),
+        componentPath: parts.slice(0, -1),
         emitEvent: {
           topic: 'element:action',
           payloadTemplate: {}

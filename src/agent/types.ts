@@ -24,8 +24,8 @@ export interface ToolDefinition {
   parameters: Record<string, any>; // JSON schema
   
   // Element routing
-  elementPath?: string[];  // e.g., ['box'] for @box.open
-  elementId?: string;      // Direct element ID reference
+  componentPath?: string[];  // e.g., ['box'] for @box.open
+  componentId?: string;      // Direct element ID reference
   
   // Event emission
   emitEvent?: {

@@ -19,6 +19,7 @@ import { getGlobalTracer, TraceCategory } from '../tracing';
 import { VEILStateManager } from '../veil/veil-state';
 import { FrameRenderCache } from './frame-render-cache';
 import { RenderContext, CachedChunk } from './render-context-types';
+import { stripTurnMarkers } from '../utils/turn-markers';
 
 export class FrameTrackingHUD implements CompressibleHUD {
   private frameRenderCache: FrameRenderCache;
@@ -395,6 +396,8 @@ export class FrameTrackingHUD implements CompressibleHUD {
               break;
             }
         
+        content = stripTurnMarkers(content);
+
         if (content) {
           contentParts.push({ content, facetId: facet.id, type: facet.type, facet });
         }
@@ -471,15 +474,19 @@ export class FrameTrackingHUD implements CompressibleHUD {
     }
     
     // Check for user input (facets with speech children that lack agentId)
+    // Search recursively since speech may be nested (e.g., history → message → speech)
+    const findUserSpeechRecursive = (node: any): boolean => {
+      if (!node) return false;
+      if ((node.type === 'speech' || node.type === 'thought') && !node.agentId) return true;
+      if (Array.isArray(node.children)) {
+        return node.children.some((child: any) => findUserSpeechRecursive(child));
+      }
+      return false;
+    };
+
     const hasUserInput = frame.deltas?.some(delta => {
       if (delta.type === 'addFacet' && delta.facet) {
-        const facet = delta.facet as any;
-        // Any facet with speech children (without agentId) is user input
-        if (Array.isArray(facet.children)) {
-          return facet.children.some((child: any) => 
-            child.type === 'speech' && !child.agentId
-          );
-        }
+        return findUserSpeechRecursive(delta.facet);
       }
       return false;
     });
@@ -552,23 +559,31 @@ export class FrameTrackingHUD implements CompressibleHUD {
     }
     
     // Container facets with speech children = conversational
-    const children = (facet as any).children;
-    if (Array.isArray(children) && children.length > 0) {
-      const speechChild = children.find((c: any) => 
-        c.type === 'speech' || c.type === 'thought'
-      );
-      
-      if (speechChild) {
-        // Has speech - check if from agent
-        if (speechChild.agentId) {
-          // Agent's speech (check multi-agent)
-          return currentAgentId && speechChild.agentId !== currentAgentId
-            ? 'user'      // Other agent
-            : 'assistant'; // Current agent
+    // Search recursively since speech may be nested (e.g., history → message → speech)
+    const findSpeechRecursive = (node: any): any => {
+      if (!node) return null;
+      if (node.type === 'speech' || node.type === 'thought') return node;
+      if (Array.isArray(node.children)) {
+        for (const child of node.children) {
+          const found = findSpeechRecursive(child);
+          if (found) return found;
         }
-        // Speech without agentId = user input
-        return 'user';
       }
+      return null;
+    };
+
+    const speechChild = findSpeechRecursive(facet);
+    // Don't match if the facet itself is speech (already handled above)
+    if (speechChild && speechChild !== facet) {
+      // Has speech - check if from agent
+      if (speechChild.agentId) {
+        // Agent's speech (check multi-agent)
+        return currentAgentId && speechChild.agentId !== currentAgentId
+          ? 'user'      // Other agent
+          : 'assistant'; // Current agent
+      }
+      // Speech without agentId = user input
+      return 'user';
     }
     
     // ===== LEVEL 4: Events - Distinguish System vs User =====

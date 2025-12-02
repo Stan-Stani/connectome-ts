@@ -3,14 +3,40 @@
  */
 
 import { FrameTransition } from '../persistence/transition-types';
+import type { ReadonlyVEILState, ReadonlyFrame } from '../veil/types';
 
 /**
- * Element reference that can survive serialization
+ * Execution context passed to components during frame processing
  */
-export interface ElementRef {
-  elementId: string;
-  elementPath: string[];  // ["root", "discord", "channel-handler"]
-  elementType?: string;   // Optional type hint
+export interface ExecutionContext {
+  event: SpaceEvent;
+  state: ReadonlyVEILState;
+  // Flattened metadata
+  sequence: number;
+  timestamp: string;
+
+  /**
+   * Readonly view of the current frame being processed.
+   * Provides access to frame metadata and deltas for inspection.
+   * Components CANNOT mutate the frame - use this.addOperation() instead.
+   */
+  frame: ReadonlyFrame;
+
+  /**
+   * Mutable buffer of OUTGOING events emitted during this frame.
+   * Components can inspect, modify, or cancel events emitted by earlier components
+   * before they are flushed to the main queue.
+   */
+  bufferedEvents: SpaceEvent[];
+}
+
+/**
+ * Component reference that can survive serialization
+ */
+export interface ComponentRef {
+  componentId: string;      // Component ID
+  componentPath: string[];  // Path in component tree, e.g., ["root", "discord"]
+  componentType?: string;   // Optional type hint
 }
 
 /**
@@ -32,38 +58,15 @@ export interface StreamRef {
 export type EventPriority = 'immediate' | 'high' | 'normal' | 'low';
 
 /**
- * Event propagation phases (DOM-style)
- */
-export enum EventPhase {
-  NONE = 0,
-  CAPTURING_PHASE = 1,
-  AT_TARGET = 2,
-  BUBBLING_PHASE = 3
-}
-
-/**
  * Base event class for the Space system
  */
 export interface SpaceEvent<T = unknown> {
   topic: string;  // "discord.message", "timer.expired", "agent.response"
-  source: ElementRef;
+  source: ComponentRef;
   payload: T;
   timestamp: number;
   priority?: EventPriority;  // Defaults to 'normal'
   metadata?: Record<string, any>;
-  
-  // Propagation control
-  bubbles?: boolean;  // Whether event bubbles up (default: true)
-  cancelable?: boolean;  // Whether propagation can be stopped (default: true)
-  broadcast?: boolean;  // Whether event should reach all subscribers regardless of tree position (default: true)
-  
-  // Runtime state (set by the event system)
-  eventPhase?: EventPhase;
-  currentTarget?: ElementRef;
-  target?: ElementRef;
-  defaultPrevented?: boolean;
-  propagationStopped?: boolean;
-  immediatePropagationStopped?: boolean;
 }
 
 /**
@@ -93,14 +96,14 @@ export interface TimeEvent extends SpaceEvent<{
 }
 
 /**
- * Element lifecycle events
+ * Component lifecycle events
  */
-export interface ElementMountEvent extends SpaceEvent<{ element: ElementRef }> {
-  topic: 'element:mount';
+export interface ComponentMountEvent extends SpaceEvent<{ component: ComponentRef }> {
+  topic: 'component:mount';
 }
 
-export interface ElementUnmountEvent extends SpaceEvent<{ element: ElementRef }> {
-  topic: 'element:unmount';
+export interface ComponentUnmountEvent extends SpaceEvent<{ component: ComponentRef }> {
+  topic: 'component:unmount';
 }
 
 /**

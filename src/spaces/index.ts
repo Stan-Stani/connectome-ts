@@ -1,6 +1,5 @@
 // Core classes
 export { Space } from './space';
-export { Element } from './element';
 export { Component } from './component';
 
 // Effectors
