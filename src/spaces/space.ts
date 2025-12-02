@@ -34,7 +34,12 @@ import { groupByPriority } from '../utils/priorities';
 // Legacy RETM type guards - kept for backwards compatibility but not used in FLEX
 // import { isReceptor, isTransform, isEffector, isMaintainer, isModulator } from '../utils/retm-type-guards';
 import { generateId } from './utils';
-import { ComponentOrderingStrategy, PriorityOrderingStrategy } from './ordering/component-ordering';
+import {
+  ComponentOrderingStrategy,
+  PriorityOrderingStrategy,
+  MultiConstraintOrderingStrategy,
+  MultiConstraintOrderingOptions
+} from './ordering/component-ordering';
 import { ComponentConstraintFacet, ConstraintFacet, priorityConstraint } from './constraints';
 
 /**
@@ -131,16 +136,44 @@ export class Space {
    */
   public enableComponentTracing: boolean = true;
 
-  constructor(veilState: VEILStateManager, hostRegistry?: Map<string, any>, lifecycleId?: string, spaceId?: string) {
+  /**
+   * Options for Space configuration
+   */
+  static readonly OrderingStrategy = {
+    /** Simple priority-based ordering (default, backward compatible) */
+    PRIORITY: 'priority',
+    /** Multi-constraint ordering with graph-based resolution */
+    MULTI_CONSTRAINT: 'multi-constraint'
+  } as const;
+
+  constructor(
+    veilState: VEILStateManager,
+    hostRegistry?: Map<string, any>,
+    lifecycleId?: string,
+    spaceId?: string,
+    options?: {
+      /** Ordering strategy: 'priority' (default) or 'multi-constraint' */
+      orderingStrategy?: 'priority' | 'multi-constraint';
+      /** Options for multi-constraint ordering (only used if orderingStrategy is 'multi-constraint') */
+      multiConstraintOptions?: MultiConstraintOrderingOptions;
+    }
+  ) {
     this.id = spaceId || 'root';
     this.veilState = veilState;
     this.hostRegistry = hostRegistry || new Map(); // Fallback for tests
     this.tracer = getGlobalTracer();
     this.lifecycleId = lifecycleId || this.generateLifecycleId();
-    
+
+    // Configure ordering strategy
+    if (options?.orderingStrategy === 'multi-constraint') {
+      this.componentOrderingStrategy = new MultiConstraintOrderingStrategy(
+        options.multiConstraintOptions ?? {}
+      );
+    }
+
     // Subscribe to agent activation events
     this.subscribe('agent:activate');
-    
+
     // Add built-in VEIL operation receptor for compatibility
     const veilOpReceptor = new VEILOperationReceptor();
     this.addComponent(veilOpReceptor);
@@ -151,6 +184,22 @@ export class Space {
    */
   toggleComponentTracing(enabled: boolean): void {
     this.enableComponentTracing = enabled;
+  }
+
+  /**
+   * Set the component ordering strategy.
+   * This will re-sort all components using the new strategy.
+   */
+  setOrderingStrategy(strategy: ComponentOrderingStrategy): void {
+    this.componentOrderingStrategy = strategy;
+    this.sortComponents();
+  }
+
+  /**
+   * Get the current ordering strategy
+   */
+  getOrderingStrategy(): ComponentOrderingStrategy {
+    return this.componentOrderingStrategy;
   }
 
   /**
