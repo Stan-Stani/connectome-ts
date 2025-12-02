@@ -48,7 +48,7 @@ export class ControlPanelActionsReceptor extends Component {
         attributes: {
           toolName: `${targetId}.open`,
           actionName: 'open',
-          componentId: targetId, // Use friendly ID for action routing
+          componentId: payload.componentId, // Use actual component ID for action routing
           description: `Open the ${payload.displayName} panel to access its tools`,
           parameters: {},
           category: payload.panelId
@@ -62,7 +62,7 @@ export class ControlPanelActionsReceptor extends Component {
         id: `tool-instruction-${payload.componentId}-open`,
         type: 'ambient',
         displayName: 'tool-instruction',
-        content: `Open ${payload.displayName} panel: {@${targetId}.open()}`
+        content: `To access ${payload.displayName} tools: {@${targetId}.open()}`
       }
     });
 
@@ -75,7 +75,7 @@ export class ControlPanelActionsReceptor extends Component {
         attributes: {
           toolName: `${targetId}.close`,
           actionName: 'close',
-          componentId: targetId, // Use friendly ID for action routing
+          componentId: payload.componentId, // Use actual component ID for action routing
           description: `Close the ${payload.displayName} panel`,
           parameters: {},
           category: payload.panelId,
@@ -90,7 +90,7 @@ export class ControlPanelActionsReceptor extends Component {
         id: `tool-instruction-${payload.componentId}-close`,
         type: 'ambient',
         displayName: 'tool-instruction',
-        content: `Close this panel: {@${targetId}.close()}`,
+        content: `To close this panel: {@${targetId}.close()}`,
         scope: [payload.panelScope]  // Only visible when open
       }
     });
@@ -110,7 +110,7 @@ export class ControlPanelActionsReceptor extends Component {
           attributes: {
             toolName,
             actionName: tool.name,
-            componentId: targetId, // Use friendly ID for action routing
+            componentId: payload.componentId, // Use actual component ID for action routing
             description: tool.description || `Perform ${tool.name} action`,
             parameters: tool.params || {},
             category: tool.category,

@@ -90,6 +90,17 @@ export class ActionEffector extends Component {
         );
       }
 
+      // If still not found, consult action-definition facets to resolve friendly names
+      if (!component) {
+        const actualComponentId = this.resolveComponentIdFromActionDefinition(toolName, state);
+        if (actualComponentId) {
+          component = space.getComponentById(actualComponentId);
+          if (component) {
+            console.log(`[ActionEffector] Resolved '${targetId}' to '${actualComponentId}' via action-definition`);
+          }
+        }
+      }
+
       if (!component) {
         console.warn(`[ActionEffector] Target component not found: ${targetId}`);
         continue;
@@ -112,5 +123,22 @@ export class ActionEffector extends Component {
         console.warn(`[ActionEffector] No handler found for action '${action}' on component '${targetId}'`);
       }
     }
+  }
+
+  /**
+   * Look up the actual component ID from action-definition facets
+   * This allows friendly tool names (e.g., "discord-control.open") to route
+   * to actual component IDs (e.g., "component:DiscordControlPanelComponent")
+   */
+  private resolveComponentIdFromActionDefinition(toolName: string, state: ReadonlyVEILState): string | null {
+    for (const [, facet] of state.facets) {
+      if (facet.type === 'action-definition') {
+        const attrs = (facet as any).attributes;
+        if (attrs && attrs.toolName === toolName && attrs.componentId) {
+          return attrs.componentId;
+        }
+      }
+    }
+    return null;
   }
 }
