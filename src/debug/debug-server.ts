@@ -65,6 +65,8 @@ interface DebugFrameRecord {
   };
   activeStream?: StreamRef;
   renderedContext?: RenderedContext;
+  /** Sub-cycle trace for debugging sync event processing */
+  subCycleTrace?: import('../spaces/types').SubCycleInfo[];
 }
 
 interface DebugMetrics {
@@ -218,6 +220,11 @@ class DebugStateTracker extends EventEmitter implements DebugObserver {
     record.activeStream = frame.activeStream;
     record.events = sanitizeFrameEvents(frame, record.uuid);
     record.kind = inferFrameKind(frame, record.kind);
+    
+    // Include sub-cycle trace if present
+    if (frame.subCycleTrace && frame.subCycleTrace.length > 0) {
+      record.subCycleTrace = frame.subCycleTrace;
+    }
 
     if (context.durationMs > 0) {
       this.completedFrames += 1;
@@ -241,7 +248,10 @@ class DebugStateTracker extends EventEmitter implements DebugObserver {
         id: context.agentId,
         name: context.agentName
       } : undefined,
-      activeStream: frame.activeStream
+      activeStream: frame.activeStream,
+      subCycleTrace: frame.subCycleTrace && frame.subCycleTrace.length > 0 
+        ? frame.subCycleTrace 
+        : undefined
     };
 
     if ((frame as any).renderedContext) {
@@ -499,7 +509,10 @@ export class DebugServer {
         events: sanitizeFrameEvents(frame, uuid),
         deltas: (frame.deltas || []).map((op: any) => sanitizePayload(op)),
         queueLength: 0,
-        activeStream: frame.activeStream
+        activeStream: frame.activeStream,
+        subCycleTrace: frame.subCycleTrace && frame.subCycleTrace.length > 0 
+          ? frame.subCycleTrace 
+          : undefined
       };
       
       // Add the frame to the tracker

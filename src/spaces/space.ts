@@ -1,5 +1,5 @@
 import { Component } from './component';
-import { SpaceEvent, FrameStartEvent, FrameEndEvent, StreamRef, ComponentRef } from './types';
+import { SpaceEvent, FrameStartEvent, FrameEndEvent, StreamRef, ComponentRef, SubCycleInfo, SubCycleConfig } from './types';
 import { VEILStateManager } from '../veil/veil-state';
 import { Frame, Facet, VEILDelta, AgentInfo, createDefaultTransition } from '../veil/types';
 import { 
@@ -130,6 +130,23 @@ export class Space {
 
   private componentOrderingStrategy: ComponentOrderingStrategy = new PriorityOrderingStrategy();
 
+  // Sub-cycle configuration
+  private subCycleConfig: Required<SubCycleConfig> = {
+    maxDepth: 10,
+    warningDepth: 5,
+    onMaxDepthExceeded: 'error',
+    fullCycle: true
+  };
+  
+  // Current sub-cycle depth (0 = main cycle, 1+ = sub-cycles)
+  private currentSubCycleDepth: number = 0;
+  
+  // Sub-cycle trace for current frame
+  private currentSubCycleTrace: SubCycleInfo[] = [];
+  
+  // Currently executing component index (for partial cycle sub-cycles)
+  private currentComponentIndex: number = 0;
+
   /**
    * Runtime flag to enable detailed component execution tracing
    * Enabled by default to provide per-component delta attribution
@@ -156,6 +173,8 @@ export class Space {
       orderingStrategy?: 'priority' | 'multi-constraint';
       /** Options for multi-constraint ordering (only used if orderingStrategy is 'multi-constraint') */
       multiConstraintOptions?: MultiConstraintOrderingOptions;
+      /** Sub-cycle configuration for sync event processing */
+      subCycle?: SubCycleConfig;
     }
   ) {
     this.id = spaceId || 'root';
@@ -169,6 +188,14 @@ export class Space {
       this.componentOrderingStrategy = new MultiConstraintOrderingStrategy(
         options.multiConstraintOptions ?? {}
       );
+    }
+    
+    // Configure sub-cycle behavior
+    if (options?.subCycle) {
+      this.subCycleConfig = {
+        ...this.subCycleConfig,
+        ...options.subCycle
+      };
     }
 
     // Subscribe to agent activation events
@@ -200,6 +227,23 @@ export class Space {
    */
   getOrderingStrategy(): ComponentOrderingStrategy {
     return this.componentOrderingStrategy;
+  }
+  
+  /**
+   * Configure sub-cycle behavior at runtime
+   */
+  setSubCycleConfig(config: Partial<SubCycleConfig>): void {
+    this.subCycleConfig = {
+      ...this.subCycleConfig,
+      ...config
+    };
+  }
+  
+  /**
+   * Get the current sub-cycle configuration
+   */
+  getSubCycleConfig(): Readonly<Required<SubCycleConfig>> {
+    return this.subCycleConfig;
   }
 
   /**
@@ -558,7 +602,121 @@ export class Space {
    * Emit an event
    */
   emit(event: SpaceEvent): void {
-    this.queueEvent(event);
+    // Handle sync events differently - they trigger sub-cycles
+    if (event.sync && this.processingFrame) {
+      this.processSubCycle(event);
+    } else {
+      this.queueEvent(event);
+    }
+  }
+  
+  /**
+   * Process a sync event in a sub-cycle
+   */
+  private processSubCycle(event: SpaceEvent): void {
+    const startDepth = this.currentSubCycleDepth + 1;
+    
+    // Check depth limit
+    if (startDepth > this.subCycleConfig.maxDepth) {
+      if (this.subCycleConfig.onMaxDepthExceeded === 'error') {
+        throw new Error(
+          `[Space] Sub-cycle depth limit exceeded (${startDepth} > ${this.subCycleConfig.maxDepth}). ` +
+          `This usually indicates an infinite loop in sync event emission. ` +
+          `Check components that emit sync events for cycles.`
+        );
+      } else {
+        console.warn(
+          `[Space] Sub-cycle depth limit exceeded (${startDepth} > ${this.subCycleConfig.maxDepth}). ` +
+          `Forcing event to buffer instead of sub-cycle.`
+        );
+        this.frameEventBuffer.push({ ...event, sync: false });
+        return;
+      }
+    }
+    
+    // Log warning at threshold
+    if (startDepth >= this.subCycleConfig.warningDepth) {
+      console.warn(
+        `[Space] Sub-cycle depth ${startDepth} - consider if this is intentional. ` +
+        `Event: ${event.topic} from ${event.source.componentId}`
+      );
+    }
+    
+    // Track sub-cycle start
+    this.currentSubCycleDepth = startDepth;
+    const startDeltaIndex = this.currentFrame?.deltas.length || 0;
+    const startTime = performance.now();
+    const eventId = `${event.topic}-${event.timestamp}`;
+    
+    console.log(`[Space] Starting sub-cycle at depth ${startDepth} for event: ${event.topic}`);
+    
+    try {
+      // Process the event through subscribed components
+      this.executeEventThroughComponents(event);
+    } finally {
+      // Record sub-cycle trace
+      if (this.currentFrame) {
+        this.currentSubCycleTrace.push({
+          depth: startDepth,
+          triggeringEventId: eventId,
+          emittingComponentId: event.source.componentId,
+          deltasRange: [startDeltaIndex, this.currentFrame.deltas.length],
+          durationMs: performance.now() - startTime
+        });
+      }
+      
+      // Restore depth
+      this.currentSubCycleDepth = startDepth - 1;
+      
+      console.log(`[Space] Completed sub-cycle at depth ${startDepth}, produced ${(this.currentFrame?.deltas.length || 0) - startDeltaIndex} deltas`);
+    }
+  }
+  
+  /**
+   * Execute an event through all subscribed components
+   * Used for both main cycle and sub-cycles
+   */
+  private executeEventThroughComponents(event: SpaceEvent): void {
+    if (!this.currentFrame) return;
+    
+    // Determine which components to iterate
+    const startIndex = this.subCycleConfig.fullCycle ? 0 : this.currentComponentIndex + 1;
+    
+    // Build execution context
+    const context = {
+      event,
+      state: this.getReadonlyState(),
+      sequence: this.currentFrame.sequence,
+      timestamp: this.currentFrame.timestamp,
+      frame: this.currentFrame as import('../veil/types').ReadonlyFrame,
+      bufferedEvents: this.frameEventBuffer
+    };
+    
+    for (let i = startIndex; i < this.components.length; i++) {
+      const component = this.components[i];
+      if (!component.enabled) continue;
+      
+      // Check topic subscription
+      if (!component.matchesTopic(event.topic)) continue;
+      
+      // Check optional event filter
+      if (component.eventFilter && !component.eventFilter(event)) continue;
+      
+      try {
+        // Execute synchronously for sub-cycles (no await)
+        component.execute(context);
+        
+        // Update context state after each component
+        context.state = this.getReadonlyState();
+        
+        // Also deliver to handleEvent for legacy compatibility
+        if (component.isSubscribedTo(event.topic)) {
+          component.handleEvent(event);
+        }
+      } catch (err) {
+        console.error(`[Space] Error in sub-cycle execution of ${component.constructor.name}:`, err);
+      }
+    }
   }
 
   /**
@@ -659,6 +817,10 @@ export class Space {
         bufferedEvents: this.frameEventBuffer
       };
 
+      // Reset sub-cycle tracking for this frame
+      this.currentSubCycleDepth = 0;
+      this.currentSubCycleTrace = [];
+
       // Sequential Execution
       // Index-based iteration allows components to be added during execution
       // Components can insert after current position using addComponent options
@@ -668,7 +830,14 @@ export class Space {
 
       for (let i = 0; i < this.components.length; i++) {
         const component = this.components[i];
+        this.currentComponentIndex = i;  // Track for partial cycle sub-cycles
         if (!component.enabled) continue;
+        
+        // Check topic subscription before executing
+        if (!component.matchesTopic(event.topic)) continue;
+        
+        // Check optional event filter
+        if (component.eventFilter && !component.eventFilter(event)) continue;
 
         let startDeltaCount = 0;
         let startEventBufferCount = 0;
@@ -757,6 +926,11 @@ export class Space {
           this.eventQueue.push(bufferedEvent);
         }
         this.frameEventBuffer = [];
+      }
+      
+      // Add sub-cycle trace to frame if any sub-cycles occurred
+      if (this.currentSubCycleTrace.length > 0) {
+        frame.subCycleTrace = [...this.currentSubCycleTrace];
       }
       
       // Finalize frame

@@ -67,6 +67,52 @@ export interface SpaceEvent<T = unknown> {
   timestamp: number;
   priority?: EventPriority;  // Defaults to 'normal'
   metadata?: Record<string, any>;
+  
+  /**
+   * If true, this event will be processed immediately in a sub-cycle
+   * instead of being queued for the next frame.
+   * 
+   * WARNING: Sync events can cause infinite loops if not used carefully.
+   * The emitting component is responsible for preventing cycles.
+   */
+  sync?: boolean;
+}
+
+/**
+ * Sub-cycle tracking information for debugging
+ */
+export interface SubCycleInfo {
+  /** Nesting depth (1 = first sub-cycle, 2 = sub-cycle within sub-cycle, etc.) */
+  depth: number;
+  /** ID of the event that triggered this sub-cycle */
+  triggeringEventId: string;
+  /** Component that emitted the sync event */
+  emittingComponentId: string;
+  /** Range of deltas produced by this sub-cycle [startIndex, endIndex) */
+  deltasRange: [number, number];
+  /** Duration of sub-cycle processing in milliseconds */
+  durationMs: number;
+}
+
+/**
+ * Configuration for sub-cycle behavior
+ */
+export interface SubCycleConfig {
+  /** Maximum sub-cycle nesting depth. Default: 10. Exceeding throws error. */
+  maxDepth?: number;
+  /** Depth at which to log warnings. Default: 5. */
+  warningDepth?: number;
+  /** 
+   * Behavior when max depth is exceeded.
+   * - 'error': Throw an error (default, fail fast)
+   * - 'buffer': Force event to buffer with warning (graceful degradation)
+   */
+  onMaxDepthExceeded?: 'error' | 'buffer';
+  /**
+   * Whether sub-cycles should run all subscribed components (true, default)
+   * or only components after the emitting one in priority order (false)
+   */
+  fullCycle?: boolean;
 }
 
 /**

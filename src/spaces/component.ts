@@ -51,6 +51,21 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
    */
   constraints: ConstraintFacet[] = [];
 
+  /**
+   * Topic subscriptions for execute() filtering.
+   * 
+   * - '*' (default): Component receives all events
+   * - string[]: Component only receives events matching these topics
+   * 
+   * Supports wildcards: 'discord.*' matches 'discord.message', 'discord.joined', etc.
+   * 
+   * @example
+   * class MyReceptor extends Component {
+   *   topics = ['discord:*', 'panel:tools-registered'];
+   * }
+   */
+  topics: string[] | '*' = '*';
+
   get enabled(): boolean {
     return this._enabled;
   }
@@ -235,13 +250,35 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
   // ========== Convenience Methods ==========
   
   /**
-   * Emit an event from the component
+   * Emit an event from the component (async - processed in next frame or buffered)
    */
   protected emit(event: Omit<SpaceEvent, 'source' | 'timestamp'> & { timestamp?: number }): void {
     this.space.emit({
       ...event,
       source: this.getRef(),
       timestamp: event.timestamp || Date.now()
+    });
+  }
+  
+  /**
+   * Emit a synchronous event that will be processed immediately in a sub-cycle.
+   * 
+   * Use this for:
+   * - Tool calls that need immediate results
+   * - Script execution with return values
+   * - Any "call and wait" pattern
+   * 
+   * WARNING: You are responsible for preventing infinite loops.
+   * If component A emits sync → B emits sync → A emits sync... = infinite loop.
+   * 
+   * @param event The event to emit synchronously
+   */
+  protected emitSync(event: Omit<SpaceEvent, 'source' | 'timestamp' | 'sync'> & { timestamp?: number }): void {
+    this.space.emit({
+      ...event,
+      source: this.getRef(),
+      timestamp: event.timestamp || Date.now(),
+      sync: true
     });
   }
   
@@ -254,9 +291,11 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
 
   /**
    * Check if this component is subscribed to a topic
+   * Checks both legacy _subscriptions AND the new topics property
    */
   isSubscribedTo(topic: string): boolean {
-    return this._subscriptions.some(pattern => {
+    // Check legacy subscriptions first
+    const legacyMatch = this._subscriptions.some(pattern => {
       if (pattern === '*') return true;
       if (pattern === topic) return true;
       if (pattern.endsWith('*')) {
@@ -265,7 +304,45 @@ export abstract class Component implements ComponentLifecycle, EventHandler {
       }
       return false;
     });
+    
+    if (legacyMatch) return true;
+    
+    // Check new topics property
+    return this.matchesTopic(topic);
   }
+  
+  /**
+   * Check if a topic matches this component's topics declaration
+   */
+  matchesTopic(topic: string): boolean {
+    if (this.topics === '*') return true;
+    
+    return this.topics.some(pattern => {
+      if (pattern === '*') return true;
+      if (pattern === topic) return true;
+      // Support wildcards: 'discord:*' matches 'discord:message'
+      if (pattern.endsWith('*')) {
+        const prefix = pattern.slice(0, -1);
+        return topic.startsWith(prefix);
+      }
+      // Support wildcards: 'discord.*' matches 'discord.message'
+      if (pattern.endsWith('.*')) {
+        const prefix = pattern.slice(0, -2) + '.';
+        return topic.startsWith(prefix);
+      }
+      return false;
+    });
+  }
+  
+  /**
+   * Optional fine-grained event filter.
+   * Called after topic matching, before execute().
+   * Override to add custom filtering logic.
+   * 
+   * @param event The event to filter
+   * @returns true to process this event, false to skip
+   */
+  eventFilter?(event: SpaceEvent): boolean;
   
   /**
    * Get a reference to this component
