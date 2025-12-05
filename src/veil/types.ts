@@ -84,6 +84,9 @@ export interface AgentInfo {
 // Import SpaceEvent for frame events
 import type { SpaceEvent } from '../spaces/types';
 
+// Import SubCycleInfo for frame metadata
+import type { SubCycleInfo } from '../spaces/types';
+
 // VEIL Frames - NOW UNIFIED!
 export interface Frame {
   sequence: number;
@@ -104,6 +107,12 @@ export interface Frame {
    * May not be present on older frames or if snapshot capture is disabled.
    */
   renderedSnapshot?: FrameRenderedSnapshot;
+  
+  /**
+   * Optional: Sub-cycle trace for debugging.
+   * Records information about sync events that triggered sub-cycles within this frame.
+   */
+  subCycleTrace?: SubCycleInfo[];
 }
 
 /**
@@ -119,6 +128,7 @@ export interface ReadonlyFrame {
   readonly deltas: readonly VEILDelta[];
   readonly transition: FrameTransition;
   readonly renderedSnapshot?: FrameRenderedSnapshot;
+  readonly subCycleTrace?: readonly SubCycleInfo[];
 }
 
 
